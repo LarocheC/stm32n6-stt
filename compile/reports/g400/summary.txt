@@ -1,0 +1,61 @@
+------ --------------------------------------------------- ------------------- ------------------- ------------ -------------------------------- 
+1920   _Transpose_output_..near_Input (Transpose)          [b:1,h:1025,c:50]                             25,625   _decoder_layers_de..ear_Output 
+------ --------------------------------------------------- ------------------- ------------------- ------------ -------------------------------- 
+1921   _Transpose_output_..ear_Output (QuantizeLinear)     [b:1,h:1025,c:50]                            102,500   _Transpose_output_..near_Input 
+------ --------------------------------------------------- ------------------- ------------------- ------------ -------------------------------- 
+1922   _Transpose_output_0 (DequantizeLinear)              [b:1,h:1025,c:50]                            102,500   _Transpose_output_..ear_Output 
+------ --------------------------------------------------- ------------------- ------------------- ------------ -------------------------------- 
+model: macc=1,117,263,290 weights=39,011,908 activations=-- io=--
+
+
+
+
+
+Compilation details
+------------------------------------------------------------------------------------
+Compiler version: 1.1.3-275
+Compiler arguments:  -i /tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/adv/g400/q400_OE_3_3_1.onnx --json-quant-file /tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/adv/g400/q400_OE_3_3_1_Q.json -g network.c --load-mdesc /home/claroche/stedgeai/install/4.0/Utilities/configs/stm32n6.mdesc --load-mpool /tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/adv/audio_strict.mpool --load-cdesc /home/claroche/stedgeai/install/4.0/Utilities/configs/cortex-m55.cdesc --save-mpool-file /tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/adv/g400/st_ai_ws/neural_art__network/audio_strict.mpool --out-dir-prefix /tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/adv/g400/st_ai_ws/neural_art__network/ --network-name network --optimization 3 --all-buffers-info --cache-maintenance --Oauto-sched --native-float --enable-virtual-mem-pools --Omax-ca-pipe 4 --Ocache-opt --Os --mapping-recap --mapping-recap-file mapping_recap.txt --num-ops-info --output-info-file c_info.json --generate-stai
+====================================================================================
+
+Memory usage information  (input/output buffers are included in activations)
+------------------------------------------------------------------------------------
+	flexMEM    [0x34000000 - 0x34000000]:          0  B /          0  B  (  0.00 % used) -- weights:          0  B (  0.00 % used)  activations:          0  B (  0.00 % used)
+	cpuRAM1    [0x34064000 - 0x34064000]:          0  B /          0  B  (  0.00 % used) -- weights:          0  B (  0.00 % used)  activations:          0  B (  0.00 % used)
+	cpuRAM2    [0x34100000 - 0x34200000]:          0  B /      1.000 MB  (  0.00 % used) -- weights:          0  B (  0.00 % used)  activations:          0  B (  0.00 % used)
+	npuRAM3    [0x34200000 - 0x34200000]:          0  B /          0  B  (  0.00 % used) -- weights:          0  B (  0.00 % used)  activations:          0  B (  0.00 % used)
+	npuRAM4    [0x34270000 - 0x34270000]:          0  B /          0  B  (  0.00 % used) -- weights:          0  B (  0.00 % used)  activations:          0  B (  0.00 % used)
+	npuRAM5    [0x342E0000 - 0x342E0000]:          0  B /          0  B  (  0.00 % used) -- weights:          0  B (  0.00 % used)  activations:          0  B (  0.00 % used)
+	npuRAM6    [0x34350000 - 0x343C0000]:    306.250 kB /    448.000 kB  ( 68.36 % used) -- weights:          0  B (  0.00 % used)  activations:    306.250 kB ( 68.36 % used)
+	octoFlash  [0x71000000 - 0x78000000]:      9.677 MB /    112.000 MB  (  8.64 % used) -- weights:      9.677 MB (  8.64 % used)  activations:          0  B (  0.00 % used)
+	hyperRAM   [0x90000000 - 0x90000000]:          0  B /          0  B  (  0.00 % used) -- weights:          0  B (  0.00 % used)  activations:          0  B (  0.00 % used)
+---
+Total:                                             9.976 MB                                  -- weights:      9.677 MB                  activations:    306.250 kB                   
+====================================================================================
+
+
+Used memory ranges
+------------------------------------------------------------------------------------
+	npuRAM6    [0x34350000 - 0x343C0000]: 0x34350000-0x3439C900
+	octoFlash  [0x71000000 - 0x78000000]: 0x71000000-0x719AD490
+====================================================================================
+
+Epochs details
+------------------------------------------------------------------------------------
+Total number of epochs                               626
+>> pure software (SW) epochs                           0
+>> hybrid epochs (using both software and hardware)    0
+>> pure hardware (HW or EC) epochs                   626  (implemented in 0 epoch controller blobs/meta epochs)
+---
++-----------+------+---------+
+| epoch ID  | Type | Details |
++-----------+------+---------+
+| epoch_2   |  HW  |         |
+| epoch_3   |  HW  |         |
+| epoch_4   |  HW  |         |
+| epoch_5   |  HW  |         |
+| epoch_6   |  HW  |         |
+| epoch_7   |  HW  |         |
+| epoch_8   |  HW  |         |
+| epoch_9   |  HW  |         |
+| epoch_10  |  HW  |         |
+| epoch_11  |  HW  |         |

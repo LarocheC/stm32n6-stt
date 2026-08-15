@@ -1,0 +1,24 @@
+=== PART 1: occupancy / room-tone floor (short utts <=2.0s in a 4 s window) ===
+n short<=2s 38 median dur 1.855
+  0
+  25
+native_exact     WER  10.27%  (15/146)
+win_zeropad      WER   8.22%  (12/146)
+win_tone-60      WER  12.33%  (18/146)
+win_tone-50      WER  10.96%  (16/146)
+win_tone-40      WER  17.12%  (25/146)
+win_tone-30      WER  43.84%  (64/146)
+
+=== PART 2: 4 s hard cap on natural-length utterances ===
+  0
+  25
+  50
+  75
+utterances 4.5-12 s, first 4 s captured: WER vs FULL reference = 47.2%  (1022/2164)
+words returned / words spoken = 1234/2164 = 0.57
+  [4.9s] REF: i thought miss milner you gave me your word that you would pass this evening at home
+        HYP: i thought miss milner you gave me your word that you would pass this evening
+  [5.4s] REF: he would see how things turned out to morrow and then he would talk to her they were going to meet as usual
+        HYP: he would see how things turned out to morrow and then he would talk to her they were
+  [6.7s] REF: but her husband felt heavy at heart and thought it were better to share the last crust with the children
+        HYP: but her husband felt heavy at heart and thought it were

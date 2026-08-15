@@ -1,0 +1,5 @@
+{
+    "model_type": "nemo-conformer-ctc",
+    "features_size": 80,
+    "subsampling_factor": 8
+}

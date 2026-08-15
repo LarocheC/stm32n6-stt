@@ -1,0 +1,21 @@
+# Rescued build artifacts and datasets — large, regenerable from model/ + compile/.
+# Kept on disk so a /tmp sweep does not cost a re-derivation, but not in git.
+artifacts/
+
+# Model surgery / quantisation intermediates
+*.pre.onnx
+*_OE_*.onnx
+st_ai_ws/
+st_ai_output/
+
+# Corpora
+LibriSpeech/
+*.tar.gz
+*.flac
+*.wav
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

@@ -1,0 +1,7 @@
+n 38
+exact-length (no window)      WER  10.27%
+4s window, pad floor    None dBFS  WER   7.53%  (11/146)
+4s window, pad floor     -60 dBFS  WER  10.27%  (15/146)
+4s window, pad floor     -50 dBFS  WER   9.59%  (14/146)
+4s window, pad floor     -40 dBFS  WER   9.59%  (14/146)
+4s window, pad floor     -30 dBFS  WER  10.27%  (15/146)

@@ -1,0 +1,69 @@
+[0;93m2026-08-15 19:13:45.049080280 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer '/encoder/encoder.14/mconv.23/Cast_3_output_0'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049151560 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer '/encoder/encoder.14/mconv.23/Not_output_0'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049159086 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer '/encoder/encoder.7/mconv.23/Cast_3_output_0'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049164576 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer '/encoder/encoder.0/mconv.3/Cast_3_output_0'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049169998 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer '/encoder/encoder.0/mconv.3/Not_output_0'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049175314 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3147'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049180778 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3146'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049185823 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3141'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049190769 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3140'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049196004 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3134'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049201476 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3129'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049206371 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3122'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049211297 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3116'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049216194 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3111'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049221130 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3087'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049226104 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3086'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049230990 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3075'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049236298 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3069'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049241123 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3068'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049250828 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3063'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049255841 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3056'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049260787 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3050'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049265667 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3045'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049270703 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3044'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049275533 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3039'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049280839 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3033'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049285931 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3032'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049290849 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3027'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049295995 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3110'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049301668 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3074'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049307222 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3051'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049316862 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3098'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049325700 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3020'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049332097 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3081'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049338672 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3135'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049344191 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3128'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049352922 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3080'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049358240 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3093'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049368534 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer '/encoder/encoder.0/mconv.3/Constant_8_output_0'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049374008 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3021'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049406209 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3123'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049415638 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3104'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049422005 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3105'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049430260 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3092'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049438651 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer '/encoder/encoder.0/mconv.3/Constant_13_output_0'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049446807 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer '/encoder/encoder.1/mconv.23/Cast_3_output_0'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049452605 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer '/encoder/encoder.7/mconv.23/Not_output_0'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049457662 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3152'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049462580 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3057'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049469119 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer '/encoder/encoder.1/mconv.23/Not_output_0'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049475149 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3038'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049488191 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3026'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049501595 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3099'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049509574 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3153'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049514591 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3117'. It is not used by any node and should be removed from the model.[m
+[0;93m2026-08-15 19:13:45.049519373 [W:onnxruntime:, graph.cc:5307 CleanUnusedInitializersAndNodeArgs] Removing initializer 'onnx::MatMul_3062'. It is not used by any node and should be removed from the model.[m
+calib/eval overlap: 11
+eval n 109
+0 1.1
+20 10.5
+40 20.6
+60 29.5
+80 38.5
+100 48.3
+f32_clean    WER   5.60%  (45/804)
+int8_clean   WER   6.09%  (49/804)
+f32_bab15    WER   9.58%  (77/804)
+int8_bab15   WER  11.07%  (89/804)
+frame argmax agreement f32 vs int8: 0.9648623853211009

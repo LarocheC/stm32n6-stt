@@ -1,0 +1,13 @@
+LibriSpeech RMS of sample: -26.413418 dBFS
+gain    0 dB : fraction of mel bins with power < log-guard(2^-24) =  27.8%
+gain  -30 dB : fraction of mel bins with power < log-guard(2^-24) =  75.9%
+gain  -40 dB : fraction of mel bins with power < log-guard(2^-24) =  88.5%
+gain  -48 dB : fraction of mel bins with power < log-guard(2^-24) =  95.1%
+gain  -54 dB : fraction of mel bins with power < log-guard(2^-24) =  97.9%
+gain  -60 dB : fraction of mel bins with power < log-guard(2^-24) =  99.3%
+g0                     WER   5.83%  (43/737)
+g-54_raw               WER  35.28%  (260/737)
+g-54_rmsnorm           WER   5.97%  (44/737)
+g-54_peaknorm          WER   5.83%  (43/737)
+g-54_int16_rmsnorm     WER  10.45%  (77/737)
+g-60_rmsnorm           WER   5.97%  (44/737)

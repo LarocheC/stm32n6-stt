@@ -1,0 +1,5 @@
+n 30 mean dur 2.4473354166666668
+       exact  WER   6.15%  (12/195)
+   4s window  WER   5.64%  (11/195)
+   8s window  WER   6.15%  (12/195)
+  12s window  WER   8.21%  (16/195)

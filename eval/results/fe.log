@@ -1,0 +1,17 @@
+  0
+  25
+  50
+  75
+ref (nemo spec)        WER    5.83%  (43/737)
+no preemphasis         WER    5.29%  (39/737)
+periodic hann          WER    5.83%  (43/737)
+HTK mel scale          WER    6.24%  (46/737)
+mel norm=None          WER    5.56%  (41/737)
+magnitude (power=1)    WER    5.97%  (44/737)
+log10 not ln           WER    5.83%  (43/737)
+dB floor 1e-10         WER    5.56%  (41/737)
+guard 1e-6             WER    6.51%  (48/737)
+guard 1e-2             WER   30.80%  (227/737)
+fmin 20 fmax 7600      WER    5.43%  (40/737)
+center=False           WER    5.43%  (40/737)
+no per-feat norm(gl)   WER    5.83%  (43/737)

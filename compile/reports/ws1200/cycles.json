@@ -1,0 +1,13 @@
+{
+  "frequency": 1000,
+  "cycles": "124080680",
+  "ideal_cycles": "58811940",
+  "ops": "6591411200",
+  "ideal_ops": "0",
+  "mem_bytes": "1041600",
+  "units_energy": 2554118387.4544044,
+  "mem_energy": 3764066947.2230377,
+  "n_epochs": 631,
+  "ms_at_1GHz": 124.081,
+  "sched_efficiency": 0.474
+}
