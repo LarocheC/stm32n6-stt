@@ -31,137 +31,268 @@
 /* Include this header from exactly ONE translation unit (the CTC decoder);
    the tables are file-static so a second includer would duplicate 8 KB. */
 
-static const char kPieces[CITRINET_PIECES_BYTES] =
-  "<unk>\0s\0 the\0t\0 a\0 i\0'\0 and\0"   /* 0..7 */
-  " to\0ed\0d\0e\0 of\0ing\0 in\0 it\0"   /* 8..15 */
-  " you\0 that\0n\0er\0y\0m\0r\0 be\0"   /* 16..23 */
-  " was\0 he\0 is\0 for\0 know\0re\0p\0ly\0"   /* 24..31 */
-  " but\0 they\0g\0 so\0 yeah\0 have\0 we\0o\0"   /* 32..39 */
-  "c\0 s\0 like\0or\0 on\0a\0i\0 re\0"   /* 40..47 */
-  " with\0ll\0 do\0 not\0al\0 are\0b\0le\0"   /* 48..55 */
-  "u\0ar\0 c\0es\0 this\0 as\0l\0en\0"   /* 56..63 */
-  " uh\0ion\0 what\0in\0ve\0k\0 there\0 or\0"   /* 64..71 */
-  " my\0 can\0 all\0ent\0f\0 his\0 me\0 just\0"   /* 72..79 */
-  " at\0 de\0 f\0 don\0 um\0il\0w\0 had\0"   /* 80..87 */
-  " no\0an\0 think\0it\0ri\0 she\0 one\0ra\0"   /* 88..95 */
-  " go\0 if\0h\0 from\0ation\0on\0 e\0v\0"   /* 96..103 */
-  " an\0 \0ce\0 t\0 would\0 right\0ch\0 were\0"   /* 104..111 */
-  "ic\0 out\0 will\0ur\0 about\0 well\0ment\0 oh\0"   /* 112..119 */
-  "ck\0 by\0 her\0 up\0 con\0 when\0 st\0cause\0"   /* 120..127 */
-  "th\0ir\0 also\0 their\0 more\0 time\0 w\0 people\0"   /* 128..135 */
-  " how\0 has\0 pa\0 mean\0li\0 g\0 some\0 get\0"   /* 136..143 */
-  " d\0 really\0 ex\0ro\0ate\0 said\0 been\0ge\0"   /* 144..151 */
-  "ne\0 who\0el\0 other\0 ba\0 bu\0ist\0 them\0"   /* 152..159 */
-  "ut\0 now\0 work\0ol\0 co\0 po\0 un\0 your\0"   /* 160..167 */
-  " him\0lo\0 good\0ver\0 could\0us\0te\0 pro\0"   /* 168..175 */
-  " even\0 ra\0ies\0 see\0la\0est\0 fa\0ad\0"   /* 176..183 */
-  " then\0 ro\0 mo\0at\0x\0as\0 any\0ow\0"   /* 184..191 */
-  "ance\0 su\0 bo\0ul\0ive\0 two\0 p\0ng\0"   /* 192..199 */
-  " la\0 say\0 o\0z\0 ma\0 over\0id\0age\0"   /* 200..207 */
-  " very\0 which\0 did\0ry\0 our\0 want\0 after\0 new\0"   /* 208..215 */
-  " v\0 ha\0 ah\0 where\0oo\0ity\0ke\0 ch\0"   /* 216..223 */
-  " lot\0 into\0 lo\0 se\0 sp\0ure\0 kind\0 day\0"   /* 224..231 */
-  " than\0 dis\0 these\0 li\0 take\0 going\0 di\0ence\0"   /* 232..239 */
-  " k\0 make\0 look\0 too\0 got\0able\0 here\0 ho\0"   /* 240..247 */
-  " much\0um\0 part\0 b\0ish\0is\0 man\0 mhm\0"   /* 248..255 */
-  " something\0ant\0 way\0 com\0 us\0 pre\0qu\0ard\0"   /* 256..263 */
-  "vi\0 sa\0 back\0 should\0ci\0per\0 le\0 only\0"   /* 264..271 */
-  "ru\0ot\0 first\0les\0 little\0 school\0 hu\0 bi\0"   /* 272..279 */
-  " th\0ff\0man\0 off\0ated\0 come\0 car\0im\0"   /* 280..287 */
-  " down\0 m\0un\0 mi\0 okay\0 fi\0 things\0ac\0"   /* 288..295 */
-  "ain\0 need\0 many\0 thing\0ta\0pt\0ight\0om\0"   /* 296..303 */
-  " year\0 fl\0 sc\0 ri\0 te\0 ru\0co\0 never\0"   /* 304..311 */
-  " da\0 still\0 al\0 most\0pe\0 hi\0 singapore\0ful\0"   /* 312..319 */
-  " long\0 call\0ine\0 years\0ig\0huh\0 three\0ide\0"   /* 320..327 */
-  " fe\0 those\0ec\0 live\0 before\0 sta\0ise\0 again\0"   /* 328..335 */
-  "am\0ical\0 play\0 old\0ma\0 en\0 '\0mi\0"   /* 336..343 */
-  "tic\0ction\0mo\0 comp\0 hear\0 friend\0ian\0 vi\0"   /* 344..351 */
-  "mb\0und\0 gu\0 through\0em\0 sha\0 min\0ary\0"   /* 352..359 */
-  " home\0 guess\0 give\0 talk\0 high\0 such\0 bl\0 help\0"   /* 360..367 */
-  "ho\0ous\0po\0 pi\0 ga\0 may\0 didn\0ti\0"   /* 368..375 */
-  "ia\0no\0 app\0 every\0pp\0ni\0 ta\0 own\0"   /* 376..383 */
-  " life\0 made\0 r\0 mar\0ath\0 y\0 place\0ally\0"   /* 384..391 */
-  " alway\0 pe\0 start\0 name\0 same\0 let\0ph\0 last\0"   /* 392..399 */
-  " actually\0 ne\0 both\0iv\0 another\0 pri\0 yes\0 great\0"   /* 400..407 */
-  " person\0 boy\0 thought\0 watch\0ward\0 money\0 went\0 show\0"   /* 408..415 */
-  " feel\0 h\0 different\0 used\0 hand\0 gra\0 tra\0 big\0"   /* 416..423 */
-  " n\0 real\0 wa\0 why\0 four\0 find\0for\0 five\0"   /* 424..431 */
-  " being\0ud\0ze\0 read\0lic\0da\0 family\0 che\0"   /* 432..439 */
-  " per\0 end\0 change\0ness\0 imp\0 put\0ca\0 under\0"   /* 440..447 */
-  " came\0ick\0ag\0 seem\0 win\0 ten\0 jo\0 tri\0"   /* 448..455 */
-  " happen\0 pu\0 around\0 plan\0 sure\0 house\0 far\0j\0"   /* 456..463 */
-  " sh\0 while\0 cha\0 anything\0 war\0nna\0 use\0 love\0"   /* 464..471 */
-  " world\0 stuff\0 better\0ster\0 ca\0 does\0 probably\0 hard\0"   /* 472..479 */
-  "gg\0ctor\0 ja\0 must\0 doing\0ha\0 found\0 care\0"   /* 480..487 */
-  " du\0row\0 state\0 point\0min\0ach\0ative\0 pretty\0"   /* 488..495 */
-  " interest\0our\0ever\0led\0 ju\0 week\0 tell\0 cre\0"   /* 496..503 */
-  "ft\0 might\0 ki\0 cl\0 inter\0 six\0ton\0ak\0"   /* 504..511 */
-  "ite\0ling\0 acc\0land\0 business\0 ph\0 away\0 though\0"   /* 512..519 */
-  "lu\0 each\0 pay\0 keep\0 everything\0fi\0av\0 children\0"   /* 520..527 */
-  " public\0 pass\0com\0ual\0 em\0 ti\0 maybe\0 young\0"   /* 528..535 */
-  "ough\0 u\0ities\0 few\0 month\0 ste\0 move\0 close\0"   /* 536..543 */
-  " sea\0son\0 pl\0 turn\0 men\0 add\0ious\0ible\0"   /* 544..551 */
-  "qui\0 am\0nch\0 grow\0 miss\0 cor\0 fun\0 done\0"   /* 552..559 */
-  " government\0 ever\0 act\0 set\0 kids\0 na\0 eight\0 exact\0"   /* 560..567 */
-  "way\0 open\0 getting\0 next\0ab\0 problem\0 er\0 cri\0"   /* 568..575 */
-  " job\0 produc\0 cat\0 night\0 book\0 learn\0line\0 small\0"   /* 576..583 */
-  "ating\0 without\0ial\0 course\0 country\0 area\0 during\0 once\0"   /* 584..591 */
-  " best\0 bad\0 mister\0 trans\0 nothing\0 believe\0 head\0 seven\0"   /* 592..599 */
-  " whole\0 face\0 water\0 service\0 cap\0 bro\0 later\0amp\0"   /* 600..607 */
-  " took\0 va\0 hour\0 true\0 mu\0 since\0 nine\0op\0"   /* 608..615 */
-  " large\0 city\0 doesn\0 having\0 sub\0 art\0ship\0 continue\0"   /* 616..623 */
-  " market\0 seen\0 game\0 sit\0 case\0 law\0 lu\0 certain\0"   /* 624..631 */
-  " je\0 tru\0 else\0 qua\0 enough\0 second\0 hope\0 between\0"   /* 632..639 */
-  " fact\0 saw\0 food\0 left\0 company\0 stand\0 able\0 teach\0"   /* 640..647 */
-  " expect\0 sometimes\0 yet\0 follow\0 main\0 told\0 girl\0 system\0"   /* 648..655 */
-  " bri\0 walk\0 bra\0 near\0 word\0bb\0 group\0 less\0"   /* 656..663 */
-  " number\0 consider\0 remain\0 develop\0 train\0 town\0 lead\0 free\0"   /* 664..671 */
-  " idea\0 together\0 important\0 gen\0 agree\0 quite\0 nice\0 try\0"   /* 672..679 */
-  " understand\0 reason\0 support\0 trying\0 low\0 stop\0 sort\0 hundred\0"   /* 680..687 */
-  "ash\0 become\0 eat\0 today\0ready\0 remember\0 issue\0 side\0"   /* 688..695 */
-  "bi\0 line\0wi\0 matter\0 question\0 asked\0 dollars\0nder\0"   /* 696..703 */
-  " twenty\0 rest\0 upon\0 student\0 count\0 father\0 half\0 office\0"   /* 704..711 */
-  " mother\0 won\0 class\0 almos\0 def\0 wait\0 cause\0bility\0"   /* 712..719 */
-  " sound\0 least\0 either\0 sign\0 fire\0 light\0 several\0 whatever\0"   /* 720..727 */
-  " himself\0 computer\0 room\0 report\0 america\0 minute\0 wh\0 general\0"   /* 728..735 */
-  " price\0 child\0 bre\0 definitely\0 parents\0 suppose\0 direct\0 operat\0"   /* 736..743 */
-  " among\0 couple\0 cost\0light\0 often\0 arm\0 appear\0 wow\0"   /* 744..751 */
-  " term\0 return\0 speak\0 usually\0 meet\0 ski\0 power\0 elect\0"   /* 752..759 */
-  " south\0 team\0 local\0 north\0 current\0 wonder\0 include\0 strong\0"   /* 760..767 */
-  " shi\0 making\0 full\0 leave\0 everyone\0 somebody\0 provide\0 movie\0"   /* 768..775 */
-  " member\0 experience\0 woman\0 possib\0 order\0rself\0 york\0 someone\0"   /* 776..783 */
-  " tax\0 short\0 umhu\0 sport\0 companies\0 health\0 bank\0 until\0"   /* 784..791 */
-  " answer\0 everybody\0 police\0 especial\0where\0 major\0 travel\0 knew\0"   /* 792..799 */
-  " program\0 land\0 employ\0 type\0 along\0 college\0 manag\0 music\0"   /* 800..807 */
-  " clear\0 safe\0 myself\0 education\0 result\0 bring\0 court\0 enter\0"   /* 808..815 */
-  " enjoy\0 hold\0 involv\0 mode\0 wheth\0 husband\0came\0 million\0"   /* 816..823 */
-  " black\0 difficult\0 social\0 morning\0ency\0 level\0 felt\0 married\0"   /* 824..831 */
-  " taking\0 require\0 living\0 early\0 wife\0 white\0 present\0 visit\0"   /* 832..839 */
-  " effect\0 serve\0 affect\0 further\0 brother\0 simp\0 shop\0 period\0"   /* 840..847 */
-  " daughter\0 national\0 break\0 quick\0 common\0 view\0 situation\0 outside\0"   /* 848..855 */
-  " east\0 community\0 rather\0 thousand\0 future\0 concern\0 success\0 nu\0"   /* 856..863 */
-  " grand\0 complete\0 spend\0 began\0 topic\0 example\0 phone\0 increase\0"   /* 864..871 */
-  " street\0 sense\0 final\0 locat\0 perform\0 charge\0 record\0 instead\0"   /* 872..879 */
-  " women\0 information\0 countries\0 born\0lthough\0 acros\0 funny\0 security\0"   /* 880..887 */
-  " cold\0 smoke\0 depend\0 treat\0 process\0 condition\0 themselves\0 recent\0"   /* 888..895 */
-  " ground\0 behind\0ified\0 custom\0 gold\0 design\0 thirty\0 third\0"   /* 896..903 */
-  " drink\0 strange\0 slow\0 particular\0 attack\0 project\0 hello\0 special\0"   /* 904..911 */
-  " listen\0 wrong\0 space\0 story\0 improve\0 english\0 happy\0 value\0"   /* 912..919 */
-  " voice\0 spoke\0 account\0 brought\0 green\0 private\0 control\0 media\0"   /* 920..927 */
-  " author\0 figure\0 china\0 university\0 easy\0 language\0 foreign\0 includ\0"   /* 928..935 */
-  " please\0 easi\0 according\0 decided\0 dream\0 sudden\0 society\0 subject\0"   /* 936..943 */
-  "place\0 animal\0 horse\0 cook\0 serious\0 draw\0 opportunit\0 front\0"   /* 944..951 */
-  " church\0 president\0 addition\0 fifty\0 worth\0 financial\0 hospital\0 difference\0"   /* 952..959 */
-  " collect\0 study\0 individual\0 effort\0 laugh\0 industry\0 stock\0 position\0"   /* 960..967 */
-  " basicall\0 similar\0 regular\0 connect\0 research\0 accept\0 restaurant\0 protect\0"   /* 968..975 */
-  " amount\0 write\0 drop\0 john\0 history\0 threat\0 middle\0 political\0"   /* 976..983 */
-  " cross\0 sleep\0 original\0 popular\0 immediate\0 engine\0 kept\0 drug\0"   /* 984..991 */
-  " decision\0 economy\0 measure\0 california\0 video\0 challenge\0 surprise\0 entire\0"   /* 992..999 */
-  " exercise\0 itself\0 available\0 benefit\0 character\0 economic\0 patient\0 despite\0"   /* 1000..1007 */
-  " feature\0 absolute\0 picture\0 club\0 football\0 focus\0 discuss\0 alchemist\0"   /* 1008..1015 */
-  " respect\0 perhaps\0 technology\0 natural\0 summer\0 observ\0 express\0q\0"   /* 1016..1023 */
-  "<blk>\0"   /* 1024..1024 */
-;
+/* NUL-separated pieces.  Emitted as character constants, not as a string
+   literal: the blob exceeds C99's 4,095-character translation limit for a
+   string literal after concatenation (5.2.4.1). */
+static const char kPieces[CITRINET_PIECES_BYTES] = {
+  '<','u','n','k','>',0, 's',0, ' ','t','h','e',0, 't',0,  /* 0..3  <unk>|s| the|t */
+  ' ','a',0, ' ','i',0, '\'',0, ' ','a','n','d',0,  /* 4..7   a| i|'| and */
+  ' ','t','o',0, 'e','d',0, 'd',0, 'e',0,  /* 8..11   to|ed|d|e */
+  ' ','o','f',0, 'i','n','g',0, ' ','i','n',0, ' ','i','t',0,  /* 12..15   of|ing| in| it */
+  ' ','y','o','u',0, ' ','t','h','a','t',0, 'n',0, 'e','r',0,  /* 16..19   you| that|n|er */
+  'y',0, 'm',0, 'r',0, ' ','b','e',0,  /* 20..23  y|m|r| be */
+  ' ','w','a','s',0, ' ','h','e',0, ' ','i','s',0, ' ','f','o','r',0,  /* 24..27   was| he| is| for */
+  ' ','k','n','o','w',0, 'r','e',0, 'p',0, 'l','y',0,  /* 28..31   know|re|p|ly */
+  ' ','b','u','t',0, ' ','t','h','e','y',0, 'g',0, ' ','s','o',0,  /* 32..35   but| they|g| so */
+  ' ','y','e','a','h',0, ' ','h','a','v','e',0, ' ','w','e',0, 'o',0,  /* 36..39   yeah| have| we|o */
+  'c',0, ' ','s',0, ' ','l','i','k','e',0, 'o','r',0,  /* 40..43  c| s| like|or */
+  ' ','o','n',0, 'a',0, 'i',0, ' ','r','e',0,  /* 44..47   on|a|i| re */
+  ' ','w','i','t','h',0, 'l','l',0, ' ','d','o',0, ' ','n','o','t',0,  /* 48..51   with|ll| do| not */
+  'a','l',0, ' ','a','r','e',0, 'b',0, 'l','e',0,  /* 52..55  al| are|b|le */
+  'u',0, 'a','r',0, ' ','c',0, 'e','s',0,  /* 56..59  u|ar| c|es */
+  ' ','t','h','i','s',0, ' ','a','s',0, 'l',0, 'e','n',0,  /* 60..63   this| as|l|en */
+  ' ','u','h',0, 'i','o','n',0, ' ','w','h','a','t',0, 'i','n',0,  /* 64..67   uh|ion| what|in */
+  'v','e',0, 'k',0, ' ','t','h','e','r','e',0, ' ','o','r',0,  /* 68..71  ve|k| there| or */
+  ' ','m','y',0, ' ','c','a','n',0, ' ','a','l','l',0, 'e','n','t',0,  /* 72..75   my| can| all|ent */
+  'f',0, ' ','h','i','s',0, ' ','m','e',0, ' ','j','u','s','t',0,  /* 76..79  f| his| me| just */
+  ' ','a','t',0, ' ','d','e',0, ' ','f',0, ' ','d','o','n',0,  /* 80..83   at| de| f| don */
+  ' ','u','m',0, 'i','l',0, 'w',0, ' ','h','a','d',0,  /* 84..87   um|il|w| had */
+  ' ','n','o',0, 'a','n',0, ' ','t','h','i','n','k',0, 'i','t',0,  /* 88..91   no|an| think|it */
+  'r','i',0, ' ','s','h','e',0, ' ','o','n','e',0, 'r','a',0,  /* 92..95  ri| she| one|ra */
+  ' ','g','o',0, ' ','i','f',0, 'h',0, ' ','f','r','o','m',0,  /* 96..99   go| if|h| from */
+  'a','t','i','o','n',0, 'o','n',0, ' ','e',0, 'v',0,  /* 100..103  ation|on| e|v */
+  ' ','a','n',0, ' ',0, 'c','e',0, ' ','t',0,  /* 104..107   an| |ce| t */
+  ' ','w','o','u','l','d',0, ' ','r','i','g','h','t',0, 'c','h',0, ' ','w','e','r','e',0,  /* 108..111   would| right|ch| were */
+  'i','c',0, ' ','o','u','t',0, ' ','w','i','l','l',0, 'u','r',0,  /* 112..115  ic| out| will|ur */
+  ' ','a','b','o','u','t',0, ' ','w','e','l','l',0, 'm','e','n','t',0, ' ','o','h',0,  /* 116..119   about| well|ment| oh */
+  'c','k',0, ' ','b','y',0, ' ','h','e','r',0, ' ','u','p',0,  /* 120..123  ck| by| her| up */
+  ' ','c','o','n',0, ' ','w','h','e','n',0, ' ','s','t',0, 'c','a','u','s','e',0,  /* 124..127   con| when| st|cause */
+  't','h',0, 'i','r',0, ' ','a','l','s','o',0, ' ','t','h','e','i','r',0,  /* 128..131  th|ir| also| their */
+  ' ','m','o','r','e',0, ' ','t','i','m','e',0, ' ','w',0, ' ','p','e','o','p','l','e',0,  /* 132..135   more| time| w| people */
+  ' ','h','o','w',0, ' ','h','a','s',0, ' ','p','a',0, ' ','m','e','a','n',0,  /* 136..139   how| has| pa| mean */
+  'l','i',0, ' ','g',0, ' ','s','o','m','e',0, ' ','g','e','t',0,  /* 140..143  li| g| some| get */
+  ' ','d',0, ' ','r','e','a','l','l','y',0, ' ','e','x',0, 'r','o',0,  /* 144..147   d| really| ex|ro */
+  'a','t','e',0, ' ','s','a','i','d',0, ' ','b','e','e','n',0, 'g','e',0,  /* 148..151  ate| said| been|ge */
+  'n','e',0, ' ','w','h','o',0, 'e','l',0, ' ','o','t','h','e','r',0,  /* 152..155  ne| who|el| other */
+  ' ','b','a',0, ' ','b','u',0, 'i','s','t',0, ' ','t','h','e','m',0,  /* 156..159   ba| bu|ist| them */
+  'u','t',0, ' ','n','o','w',0, ' ','w','o','r','k',0, 'o','l',0,  /* 160..163  ut| now| work|ol */
+  ' ','c','o',0, ' ','p','o',0, ' ','u','n',0, ' ','y','o','u','r',0,  /* 164..167   co| po| un| your */
+  ' ','h','i','m',0, 'l','o',0, ' ','g','o','o','d',0, 'v','e','r',0,  /* 168..171   him|lo| good|ver */
+  ' ','c','o','u','l','d',0, 'u','s',0, 't','e',0, ' ','p','r','o',0,  /* 172..175   could|us|te| pro */
+  ' ','e','v','e','n',0, ' ','r','a',0, 'i','e','s',0, ' ','s','e','e',0,  /* 176..179   even| ra|ies| see */
+  'l','a',0, 'e','s','t',0, ' ','f','a',0, 'a','d',0,  /* 180..183  la|est| fa|ad */
+  ' ','t','h','e','n',0, ' ','r','o',0, ' ','m','o',0, 'a','t',0,  /* 184..187   then| ro| mo|at */
+  'x',0, 'a','s',0, ' ','a','n','y',0, 'o','w',0,  /* 188..191  x|as| any|ow */
+  'a','n','c','e',0, ' ','s','u',0, ' ','b','o',0, 'u','l',0,  /* 192..195  ance| su| bo|ul */
+  'i','v','e',0, ' ','t','w','o',0, ' ','p',0, 'n','g',0,  /* 196..199  ive| two| p|ng */
+  ' ','l','a',0, ' ','s','a','y',0, ' ','o',0, 'z',0,  /* 200..203   la| say| o|z */
+  ' ','m','a',0, ' ','o','v','e','r',0, 'i','d',0, 'a','g','e',0,  /* 204..207   ma| over|id|age */
+  ' ','v','e','r','y',0, ' ','w','h','i','c','h',0, ' ','d','i','d',0, 'r','y',0,  /* 208..211   very| which| did|ry */
+  ' ','o','u','r',0, ' ','w','a','n','t',0, ' ','a','f','t','e','r',0, ' ','n','e','w',0,  /* 212..215   our| want| after| new */
+  ' ','v',0, ' ','h','a',0, ' ','a','h',0, ' ','w','h','e','r','e',0,  /* 216..219   v| ha| ah| where */
+  'o','o',0, 'i','t','y',0, 'k','e',0, ' ','c','h',0,  /* 220..223  oo|ity|ke| ch */
+  ' ','l','o','t',0, ' ','i','n','t','o',0, ' ','l','o',0, ' ','s','e',0,  /* 224..227   lot| into| lo| se */
+  ' ','s','p',0, 'u','r','e',0, ' ','k','i','n','d',0, ' ','d','a','y',0,  /* 228..231   sp|ure| kind| day */
+  ' ','t','h','a','n',0, ' ','d','i','s',0, ' ','t','h','e','s','e',0, ' ','l','i',0,  /* 232..235   than| dis| these| li */
+  ' ','t','a','k','e',0, ' ','g','o','i','n','g',0, ' ','d','i',0, 'e','n','c','e',0,  /* 236..239   take| going| di|ence */
+  ' ','k',0, ' ','m','a','k','e',0, ' ','l','o','o','k',0, ' ','t','o','o',0,  /* 240..243   k| make| look| too */
+  ' ','g','o','t',0, 'a','b','l','e',0, ' ','h','e','r','e',0, ' ','h','o',0,  /* 244..247   got|able| here| ho */
+  ' ','m','u','c','h',0, 'u','m',0, ' ','p','a','r','t',0, ' ','b',0,  /* 248..251   much|um| part| b */
+  'i','s','h',0, 'i','s',0, ' ','m','a','n',0, ' ','m','h','m',0,  /* 252..255  ish|is| man| mhm */
+  ' ','s','o','m','e','t','h','i','n','g',0, 'a','n','t',0, ' ','w','a','y',0, ' ','c','o','m',0,  /* 256..259   something|ant| way| com */
+  ' ','u','s',0, ' ','p','r','e',0, 'q','u',0, 'a','r','d',0,  /* 260..263   us| pre|qu|ard */
+  'v','i',0, ' ','s','a',0, ' ','b','a','c','k',0, ' ','s','h','o','u','l','d',0,  /* 264..267  vi| sa| back| should */
+  'c','i',0, 'p','e','r',0, ' ','l','e',0, ' ','o','n','l','y',0,  /* 268..271  ci|per| le| only */
+  'r','u',0, 'o','t',0, ' ','f','i','r','s','t',0, 'l','e','s',0,  /* 272..275  ru|ot| first|les */
+  ' ','l','i','t','t','l','e',0, ' ','s','c','h','o','o','l',0, ' ','h','u',0, ' ','b','i',0,  /* 276..279   little| school| hu| bi */
+  ' ','t','h',0, 'f','f',0, 'm','a','n',0, ' ','o','f','f',0,  /* 280..283   th|ff|man| off */
+  'a','t','e','d',0, ' ','c','o','m','e',0, ' ','c','a','r',0, 'i','m',0,  /* 284..287  ated| come| car|im */
+  ' ','d','o','w','n',0, ' ','m',0, 'u','n',0, ' ','m','i',0,  /* 288..291   down| m|un| mi */
+  ' ','o','k','a','y',0, ' ','f','i',0, ' ','t','h','i','n','g','s',0, 'a','c',0,  /* 292..295   okay| fi| things|ac */
+  'a','i','n',0, ' ','n','e','e','d',0, ' ','m','a','n','y',0, ' ','t','h','i','n','g',0,  /* 296..299  ain| need| many| thing */
+  't','a',0, 'p','t',0, 'i','g','h','t',0, 'o','m',0,  /* 300..303  ta|pt|ight|om */
+  ' ','y','e','a','r',0, ' ','f','l',0, ' ','s','c',0, ' ','r','i',0,  /* 304..307   year| fl| sc| ri */
+  ' ','t','e',0, ' ','r','u',0, 'c','o',0, ' ','n','e','v','e','r',0,  /* 308..311   te| ru|co| never */
+  ' ','d','a',0, ' ','s','t','i','l','l',0, ' ','a','l',0, ' ','m','o','s','t',0,  /* 312..315   da| still| al| most */
+  'p','e',0, ' ','h','i',0, ' ','s','i','n','g','a','p','o','r','e',0, 'f','u','l',0,  /* 316..319  pe| hi| singapore|ful */
+  ' ','l','o','n','g',0, ' ','c','a','l','l',0, 'i','n','e',0, ' ','y','e','a','r','s',0,  /* 320..323   long| call|ine| years */
+  'i','g',0, 'h','u','h',0, ' ','t','h','r','e','e',0, 'i','d','e',0,  /* 324..327  ig|huh| three|ide */
+  ' ','f','e',0, ' ','t','h','o','s','e',0, 'e','c',0, ' ','l','i','v','e',0,  /* 328..331   fe| those|ec| live */
+  ' ','b','e','f','o','r','e',0, ' ','s','t','a',0, 'i','s','e',0, ' ','a','g','a','i','n',0,  /* 332..335   before| sta|ise| again */
+  'a','m',0, 'i','c','a','l',0, ' ','p','l','a','y',0, ' ','o','l','d',0,  /* 336..339  am|ical| play| old */
+  'm','a',0, ' ','e','n',0, ' ','\'',0, 'm','i',0,  /* 340..343  ma| en| '|mi */
+  't','i','c',0, 'c','t','i','o','n',0, 'm','o',0, ' ','c','o','m','p',0,  /* 344..347  tic|ction|mo| comp */
+  ' ','h','e','a','r',0, ' ','f','r','i','e','n','d',0, 'i','a','n',0, ' ','v','i',0,  /* 348..351   hear| friend|ian| vi */
+  'm','b',0, 'u','n','d',0, ' ','g','u',0, ' ','t','h','r','o','u','g','h',0,  /* 352..355  mb|und| gu| through */
+  'e','m',0, ' ','s','h','a',0, ' ','m','i','n',0, 'a','r','y',0,  /* 356..359  em| sha| min|ary */
+  ' ','h','o','m','e',0, ' ','g','u','e','s','s',0, ' ','g','i','v','e',0, ' ','t','a','l','k',0,  /* 360..363   home| guess| give| talk */
+  ' ','h','i','g','h',0, ' ','s','u','c','h',0, ' ','b','l',0, ' ','h','e','l','p',0,  /* 364..367   high| such| bl| help */
+  'h','o',0, 'o','u','s',0, 'p','o',0, ' ','p','i',0,  /* 368..371  ho|ous|po| pi */
+  ' ','g','a',0, ' ','m','a','y',0, ' ','d','i','d','n',0, 't','i',0,  /* 372..375   ga| may| didn|ti */
+  'i','a',0, 'n','o',0, ' ','a','p','p',0, ' ','e','v','e','r','y',0,  /* 376..379  ia|no| app| every */
+  'p','p',0, 'n','i',0, ' ','t','a',0, ' ','o','w','n',0,  /* 380..383  pp|ni| ta| own */
+  ' ','l','i','f','e',0, ' ','m','a','d','e',0, ' ','r',0, ' ','m','a','r',0,  /* 384..387   life| made| r| mar */
+  'a','t','h',0, ' ','y',0, ' ','p','l','a','c','e',0, 'a','l','l','y',0,  /* 388..391  ath| y| place|ally */
+  ' ','a','l','w','a','y',0, ' ','p','e',0, ' ','s','t','a','r','t',0, ' ','n','a','m','e',0,  /* 392..395   alway| pe| start| name */
+  ' ','s','a','m','e',0, ' ','l','e','t',0, 'p','h',0, ' ','l','a','s','t',0,  /* 396..399   same| let|ph| last */
+  ' ','a','c','t','u','a','l','l','y',0, ' ','n','e',0, ' ','b','o','t','h',0, 'i','v',0,  /* 400..403   actually| ne| both|iv */
+  ' ','a','n','o','t','h','e','r',0, ' ','p','r','i',0, ' ','y','e','s',0, ' ','g','r','e','a','t',0,  /* 404..407   another| pri| yes| great */
+  ' ','p','e','r','s','o','n',0, ' ','b','o','y',0, ' ','t','h','o','u','g','h','t',0, ' ','w','a','t','c','h',0,  /* 408..411   person| boy| thought| watch */
+  'w','a','r','d',0, ' ','m','o','n','e','y',0, ' ','w','e','n','t',0, ' ','s','h','o','w',0,  /* 412..415  ward| money| went| show */
+  ' ','f','e','e','l',0, ' ','h',0, ' ','d','i','f','f','e','r','e','n','t',0, ' ','u','s','e','d',0,  /* 416..419   feel| h| different| used */
+  ' ','h','a','n','d',0, ' ','g','r','a',0, ' ','t','r','a',0, ' ','b','i','g',0,  /* 420..423   hand| gra| tra| big */
+  ' ','n',0, ' ','r','e','a','l',0, ' ','w','a',0, ' ','w','h','y',0,  /* 424..427   n| real| wa| why */
+  ' ','f','o','u','r',0, ' ','f','i','n','d',0, 'f','o','r',0, ' ','f','i','v','e',0,  /* 428..431   four| find|for| five */
+  ' ','b','e','i','n','g',0, 'u','d',0, 'z','e',0, ' ','r','e','a','d',0,  /* 432..435   being|ud|ze| read */
+  'l','i','c',0, 'd','a',0, ' ','f','a','m','i','l','y',0, ' ','c','h','e',0,  /* 436..439  lic|da| family| che */
+  ' ','p','e','r',0, ' ','e','n','d',0, ' ','c','h','a','n','g','e',0, 'n','e','s','s',0,  /* 440..443   per| end| change|ness */
+  ' ','i','m','p',0, ' ','p','u','t',0, 'c','a',0, ' ','u','n','d','e','r',0,  /* 444..447   imp| put|ca| under */
+  ' ','c','a','m','e',0, 'i','c','k',0, 'a','g',0, ' ','s','e','e','m',0,  /* 448..451   came|ick|ag| seem */
+  ' ','w','i','n',0, ' ','t','e','n',0, ' ','j','o',0, ' ','t','r','i',0,  /* 452..455   win| ten| jo| tri */
+  ' ','h','a','p','p','e','n',0, ' ','p','u',0, ' ','a','r','o','u','n','d',0, ' ','p','l','a','n',0,  /* 456..459   happen| pu| around| plan */
+  ' ','s','u','r','e',0, ' ','h','o','u','s','e',0, ' ','f','a','r',0, 'j',0,  /* 460..463   sure| house| far|j */
+  ' ','s','h',0, ' ','w','h','i','l','e',0, ' ','c','h','a',0, ' ','a','n','y','t','h','i','n','g',0,  /* 464..467   sh| while| cha| anything */
+  ' ','w','a','r',0, 'n','n','a',0, ' ','u','s','e',0, ' ','l','o','v','e',0,  /* 468..471   war|nna| use| love */
+  ' ','w','o','r','l','d',0, ' ','s','t','u','f','f',0, ' ','b','e','t','t','e','r',0, 's','t','e','r',0,  /* 472..475   world| stuff| better|ster */
+  ' ','c','a',0, ' ','d','o','e','s',0, ' ','p','r','o','b','a','b','l','y',0, ' ','h','a','r','d',0,  /* 476..479   ca| does| probably| hard */
+  'g','g',0, 'c','t','o','r',0, ' ','j','a',0, ' ','m','u','s','t',0,  /* 480..483  gg|ctor| ja| must */
+  ' ','d','o','i','n','g',0, 'h','a',0, ' ','f','o','u','n','d',0, ' ','c','a','r','e',0,  /* 484..487   doing|ha| found| care */
+  ' ','d','u',0, 'r','o','w',0, ' ','s','t','a','t','e',0, ' ','p','o','i','n','t',0,  /* 488..491   du|row| state| point */
+  'm','i','n',0, 'a','c','h',0, 'a','t','i','v','e',0, ' ','p','r','e','t','t','y',0,  /* 492..495  min|ach|ative| pretty */
+  ' ','i','n','t','e','r','e','s','t',0, 'o','u','r',0, 'e','v','e','r',0, 'l','e','d',0,  /* 496..499   interest|our|ever|led */
+  ' ','j','u',0, ' ','w','e','e','k',0, ' ','t','e','l','l',0, ' ','c','r','e',0,  /* 500..503   ju| week| tell| cre */
+  'f','t',0, ' ','m','i','g','h','t',0, ' ','k','i',0, ' ','c','l',0,  /* 504..507  ft| might| ki| cl */
+  ' ','i','n','t','e','r',0, ' ','s','i','x',0, 't','o','n',0, 'a','k',0,  /* 508..511   inter| six|ton|ak */
+  'i','t','e',0, 'l','i','n','g',0, ' ','a','c','c',0, 'l','a','n','d',0,  /* 512..515  ite|ling| acc|land */
+  ' ','b','u','s','i','n','e','s','s',0, ' ','p','h',0, ' ','a','w','a','y',0, ' ','t','h','o','u','g','h',0,  /* 516..519   business| ph| away| though */
+  'l','u',0, ' ','e','a','c','h',0, ' ','p','a','y',0, ' ','k','e','e','p',0,  /* 520..523  lu| each| pay| keep */
+  ' ','e','v','e','r','y','t','h','i','n','g',0, 'f','i',0, 'a','v',0, ' ','c','h','i','l','d','r','e','n',0,  /* 524..527   everything|fi|av| children */
+  ' ','p','u','b','l','i','c',0, ' ','p','a','s','s',0, 'c','o','m',0, 'u','a','l',0,  /* 528..531   public| pass|com|ual */
+  ' ','e','m',0, ' ','t','i',0, ' ','m','a','y','b','e',0, ' ','y','o','u','n','g',0,  /* 532..535   em| ti| maybe| young */
+  'o','u','g','h',0, ' ','u',0, 'i','t','i','e','s',0, ' ','f','e','w',0,  /* 536..539  ough| u|ities| few */
+  ' ','m','o','n','t','h',0, ' ','s','t','e',0, ' ','m','o','v','e',0, ' ','c','l','o','s','e',0,  /* 540..543   month| ste| move| close */
+  ' ','s','e','a',0, 's','o','n',0, ' ','p','l',0, ' ','t','u','r','n',0,  /* 544..547   sea|son| pl| turn */
+  ' ','m','e','n',0, ' ','a','d','d',0, 'i','o','u','s',0, 'i','b','l','e',0,  /* 548..551   men| add|ious|ible */
+  'q','u','i',0, ' ','a','m',0, 'n','c','h',0, ' ','g','r','o','w',0,  /* 552..555  qui| am|nch| grow */
+  ' ','m','i','s','s',0, ' ','c','o','r',0, ' ','f','u','n',0, ' ','d','o','n','e',0,  /* 556..559   miss| cor| fun| done */
+  ' ','g','o','v','e','r','n','m','e','n','t',0, ' ','e','v','e','r',0, ' ','a','c','t',0, ' ','s','e','t',0,  /* 560..563   government| ever| act| set */
+  ' ','k','i','d','s',0, ' ','n','a',0, ' ','e','i','g','h','t',0, ' ','e','x','a','c','t',0,  /* 564..567   kids| na| eight| exact */
+  'w','a','y',0, ' ','o','p','e','n',0, ' ','g','e','t','t','i','n','g',0, ' ','n','e','x','t',0,  /* 568..571  way| open| getting| next */
+  'a','b',0, ' ','p','r','o','b','l','e','m',0, ' ','e','r',0, ' ','c','r','i',0,  /* 572..575  ab| problem| er| cri */
+  ' ','j','o','b',0, ' ','p','r','o','d','u','c',0, ' ','c','a','t',0, ' ','n','i','g','h','t',0,  /* 576..579   job| produc| cat| night */
+  ' ','b','o','o','k',0, ' ','l','e','a','r','n',0, 'l','i','n','e',0, ' ','s','m','a','l','l',0,  /* 580..583   book| learn|line| small */
+  'a','t','i','n','g',0, ' ','w','i','t','h','o','u','t',0, 'i','a','l',0, ' ','c','o','u','r','s','e',0,  /* 584..587  ating| without|ial| course */
+  ' ','c','o','u','n','t','r','y',0, ' ','a','r','e','a',0, ' ','d','u','r','i','n','g',0, ' ','o','n','c','e',0,  /* 588..591   country| area| during| once */
+  ' ','b','e','s','t',0, ' ','b','a','d',0, ' ','m','i','s','t','e','r',0, ' ','t','r','a','n','s',0,  /* 592..595   best| bad| mister| trans */
+  ' ','n','o','t','h','i','n','g',0, ' ','b','e','l','i','e','v','e',0, ' ','h','e','a','d',0, ' ','s','e','v','e','n',0,  /* 596..599   nothing| believe| head| seven */
+  ' ','w','h','o','l','e',0, ' ','f','a','c','e',0, ' ','w','a','t','e','r',0, ' ','s','e','r','v','i','c','e',0,  /* 600..603   whole| face| water| service */
+  ' ','c','a','p',0, ' ','b','r','o',0, ' ','l','a','t','e','r',0, 'a','m','p',0,  /* 604..607   cap| bro| later|amp */
+  ' ','t','o','o','k',0, ' ','v','a',0, ' ','h','o','u','r',0, ' ','t','r','u','e',0,  /* 608..611   took| va| hour| true */
+  ' ','m','u',0, ' ','s','i','n','c','e',0, ' ','n','i','n','e',0, 'o','p',0,  /* 612..615   mu| since| nine|op */
+  ' ','l','a','r','g','e',0, ' ','c','i','t','y',0, ' ','d','o','e','s','n',0, ' ','h','a','v','i','n','g',0,  /* 616..619   large| city| doesn| having */
+  ' ','s','u','b',0, ' ','a','r','t',0, 's','h','i','p',0, ' ','c','o','n','t','i','n','u','e',0,  /* 620..623   sub| art|ship| continue */
+  ' ','m','a','r','k','e','t',0, ' ','s','e','e','n',0, ' ','g','a','m','e',0, ' ','s','i','t',0,  /* 624..627   market| seen| game| sit */
+  ' ','c','a','s','e',0, ' ','l','a','w',0, ' ','l','u',0, ' ','c','e','r','t','a','i','n',0,  /* 628..631   case| law| lu| certain */
+  ' ','j','e',0, ' ','t','r','u',0, ' ','e','l','s','e',0, ' ','q','u','a',0,  /* 632..635   je| tru| else| qua */
+  ' ','e','n','o','u','g','h',0, ' ','s','e','c','o','n','d',0, ' ','h','o','p','e',0, ' ','b','e','t','w','e','e','n',0,  /* 636..639   enough| second| hope| between */
+  ' ','f','a','c','t',0, ' ','s','a','w',0, ' ','f','o','o','d',0, ' ','l','e','f','t',0,  /* 640..643   fact| saw| food| left */
+  ' ','c','o','m','p','a','n','y',0, ' ','s','t','a','n','d',0, ' ','a','b','l','e',0, ' ','t','e','a','c','h',0,  /* 644..647   company| stand| able| teach */
+  ' ','e','x','p','e','c','t',0, ' ','s','o','m','e','t','i','m','e','s',0, ' ','y','e','t',0, ' ','f','o','l','l','o','w',0,  /* 648..651   expect| sometimes| yet| follow */
+  ' ','m','a','i','n',0, ' ','t','o','l','d',0, ' ','g','i','r','l',0, ' ','s','y','s','t','e','m',0,  /* 652..655   main| told| girl| system */
+  ' ','b','r','i',0, ' ','w','a','l','k',0, ' ','b','r','a',0, ' ','n','e','a','r',0,  /* 656..659   bri| walk| bra| near */
+  ' ','w','o','r','d',0, 'b','b',0, ' ','g','r','o','u','p',0, ' ','l','e','s','s',0,  /* 660..663   word|bb| group| less */
+  ' ','n','u','m','b','e','r',0, ' ','c','o','n','s','i','d','e','r',0, ' ','r','e','m','a','i','n',0, ' ','d','e','v','e','l','o','p',0,  /* 664..667   number| consider| remain| develop */
+  ' ','t','r','a','i','n',0, ' ','t','o','w','n',0, ' ','l','e','a','d',0, ' ','f','r','e','e',0,  /* 668..671   train| town| lead| free */
+  ' ','i','d','e','a',0, ' ','t','o','g','e','t','h','e','r',0, ' ','i','m','p','o','r','t','a','n','t',0, ' ','g','e','n',0,  /* 672..675   idea| together| important| gen */
+  ' ','a','g','r','e','e',0, ' ','q','u','i','t','e',0, ' ','n','i','c','e',0, ' ','t','r','y',0,  /* 676..679   agree| quite| nice| try */
+  ' ','u','n','d','e','r','s','t','a','n','d',0, ' ','r','e','a','s','o','n',0, ' ','s','u','p','p','o','r','t',0, ' ','t','r','y','i','n','g',0,  /* 680..683   understand| reason| support| trying */
+  ' ','l','o','w',0, ' ','s','t','o','p',0, ' ','s','o','r','t',0, ' ','h','u','n','d','r','e','d',0,  /* 684..687   low| stop| sort| hundred */
+  'a','s','h',0, ' ','b','e','c','o','m','e',0, ' ','e','a','t',0, ' ','t','o','d','a','y',0,  /* 688..691  ash| become| eat| today */
+  'r','e','a','d','y',0, ' ','r','e','m','e','m','b','e','r',0, ' ','i','s','s','u','e',0, ' ','s','i','d','e',0,  /* 692..695  ready| remember| issue| side */
+  'b','i',0, ' ','l','i','n','e',0, 'w','i',0, ' ','m','a','t','t','e','r',0,  /* 696..699  bi| line|wi| matter */
+  ' ','q','u','e','s','t','i','o','n',0, ' ','a','s','k','e','d',0, ' ','d','o','l','l','a','r','s',0, 'n','d','e','r',0,  /* 700..703   question| asked| dollars|nder */
+  ' ','t','w','e','n','t','y',0, ' ','r','e','s','t',0, ' ','u','p','o','n',0, ' ','s','t','u','d','e','n','t',0,  /* 704..707   twenty| rest| upon| student */
+  ' ','c','o','u','n','t',0, ' ','f','a','t','h','e','r',0, ' ','h','a','l','f',0, ' ','o','f','f','i','c','e',0,  /* 708..711   count| father| half| office */
+  ' ','m','o','t','h','e','r',0, ' ','w','o','n',0, ' ','c','l','a','s','s',0, ' ','a','l','m','o','s',0,  /* 712..715   mother| won| class| almos */
+  ' ','d','e','f',0, ' ','w','a','i','t',0, ' ','c','a','u','s','e',0, 'b','i','l','i','t','y',0,  /* 716..719   def| wait| cause|bility */
+  ' ','s','o','u','n','d',0, ' ','l','e','a','s','t',0, ' ','e','i','t','h','e','r',0, ' ','s','i','g','n',0,  /* 720..723   sound| least| either| sign */
+  ' ','f','i','r','e',0, ' ','l','i','g','h','t',0, ' ','s','e','v','e','r','a','l',0, ' ','w','h','a','t','e','v','e','r',0,  /* 724..727   fire| light| several| whatever */
+  ' ','h','i','m','s','e','l','f',0, ' ','c','o','m','p','u','t','e','r',0, ' ','r','o','o','m',0, ' ','r','e','p','o','r','t',0,  /* 728..731   himself| computer| room| report */
+  ' ','a','m','e','r','i','c','a',0, ' ','m','i','n','u','t','e',0, ' ','w','h',0, ' ','g','e','n','e','r','a','l',0,  /* 732..735   america| minute| wh| general */
+  ' ','p','r','i','c','e',0, ' ','c','h','i','l','d',0, ' ','b','r','e',0, ' ','d','e','f','i','n','i','t','e','l','y',0,  /* 736..739   price| child| bre| definitely */
+  ' ','p','a','r','e','n','t','s',0, ' ','s','u','p','p','o','s','e',0, ' ','d','i','r','e','c','t',0, ' ','o','p','e','r','a','t',0,  /* 740..743   parents| suppose| direct| operat */
+  ' ','a','m','o','n','g',0, ' ','c','o','u','p','l','e',0, ' ','c','o','s','t',0, 'l','i','g','h','t',0,  /* 744..747   among| couple| cost|light */
+  ' ','o','f','t','e','n',0, ' ','a','r','m',0, ' ','a','p','p','e','a','r',0, ' ','w','o','w',0,  /* 748..751   often| arm| appear| wow */
+  ' ','t','e','r','m',0, ' ','r','e','t','u','r','n',0, ' ','s','p','e','a','k',0, ' ','u','s','u','a','l','l','y',0,  /* 752..755   term| return| speak| usually */
+  ' ','m','e','e','t',0, ' ','s','k','i',0, ' ','p','o','w','e','r',0, ' ','e','l','e','c','t',0,  /* 756..759   meet| ski| power| elect */
+  ' ','s','o','u','t','h',0, ' ','t','e','a','m',0, ' ','l','o','c','a','l',0, ' ','n','o','r','t','h',0,  /* 760..763   south| team| local| north */
+  ' ','c','u','r','r','e','n','t',0, ' ','w','o','n','d','e','r',0, ' ','i','n','c','l','u','d','e',0, ' ','s','t','r','o','n','g',0,  /* 764..767   current| wonder| include| strong */
+  ' ','s','h','i',0, ' ','m','a','k','i','n','g',0, ' ','f','u','l','l',0, ' ','l','e','a','v','e',0,  /* 768..771   shi| making| full| leave */
+  ' ','e','v','e','r','y','o','n','e',0, ' ','s','o','m','e','b','o','d','y',0, ' ','p','r','o','v','i','d','e',0, ' ','m','o','v','i','e',0,  /* 772..775   everyone| somebody| provide| movie */
+  ' ','m','e','m','b','e','r',0, ' ','e','x','p','e','r','i','e','n','c','e',0, ' ','w','o','m','a','n',0, ' ','p','o','s','s','i','b',0,  /* 776..779   member| experience| woman| possib */
+  ' ','o','r','d','e','r',0, 'r','s','e','l','f',0, ' ','y','o','r','k',0, ' ','s','o','m','e','o','n','e',0,  /* 780..783   order|rself| york| someone */
+  ' ','t','a','x',0, ' ','s','h','o','r','t',0, ' ','u','m','h','u',0, ' ','s','p','o','r','t',0,  /* 784..787   tax| short| umhu| sport */
+  ' ','c','o','m','p','a','n','i','e','s',0, ' ','h','e','a','l','t','h',0, ' ','b','a','n','k',0, ' ','u','n','t','i','l',0,  /* 788..791   companies| health| bank| until */
+  ' ','a','n','s','w','e','r',0, ' ','e','v','e','r','y','b','o','d','y',0, ' ','p','o','l','i','c','e',0, ' ','e','s','p','e','c','i','a','l',0,  /* 792..795   answer| everybody| police| especial */
+  'w','h','e','r','e',0, ' ','m','a','j','o','r',0, ' ','t','r','a','v','e','l',0, ' ','k','n','e','w',0,  /* 796..799  where| major| travel| knew */
+  ' ','p','r','o','g','r','a','m',0, ' ','l','a','n','d',0, ' ','e','m','p','l','o','y',0, ' ','t','y','p','e',0,  /* 800..803   program| land| employ| type */
+  ' ','a','l','o','n','g',0, ' ','c','o','l','l','e','g','e',0, ' ','m','a','n','a','g',0, ' ','m','u','s','i','c',0,  /* 804..807   along| college| manag| music */
+  ' ','c','l','e','a','r',0, ' ','s','a','f','e',0, ' ','m','y','s','e','l','f',0, ' ','e','d','u','c','a','t','i','o','n',0,  /* 808..811   clear| safe| myself| education */
+  ' ','r','e','s','u','l','t',0, ' ','b','r','i','n','g',0, ' ','c','o','u','r','t',0, ' ','e','n','t','e','r',0,  /* 812..815   result| bring| court| enter */
+  ' ','e','n','j','o','y',0, ' ','h','o','l','d',0, ' ','i','n','v','o','l','v',0, ' ','m','o','d','e',0,  /* 816..819   enjoy| hold| involv| mode */
+  ' ','w','h','e','t','h',0, ' ','h','u','s','b','a','n','d',0, 'c','a','m','e',0, ' ','m','i','l','l','i','o','n',0,  /* 820..823   wheth| husband|came| million */
+  ' ','b','l','a','c','k',0, ' ','d','i','f','f','i','c','u','l','t',0, ' ','s','o','c','i','a','l',0, ' ','m','o','r','n','i','n','g',0,  /* 824..827   black| difficult| social| morning */
+  'e','n','c','y',0, ' ','l','e','v','e','l',0, ' ','f','e','l','t',0, ' ','m','a','r','r','i','e','d',0,  /* 828..831  ency| level| felt| married */
+  ' ','t','a','k','i','n','g',0, ' ','r','e','q','u','i','r','e',0, ' ','l','i','v','i','n','g',0, ' ','e','a','r','l','y',0,  /* 832..835   taking| require| living| early */
+  ' ','w','i','f','e',0, ' ','w','h','i','t','e',0, ' ','p','r','e','s','e','n','t',0, ' ','v','i','s','i','t',0,  /* 836..839   wife| white| present| visit */
+  ' ','e','f','f','e','c','t',0, ' ','s','e','r','v','e',0, ' ','a','f','f','e','c','t',0, ' ','f','u','r','t','h','e','r',0,  /* 840..843   effect| serve| affect| further */
+  ' ','b','r','o','t','h','e','r',0, ' ','s','i','m','p',0, ' ','s','h','o','p',0, ' ','p','e','r','i','o','d',0,  /* 844..847   brother| simp| shop| period */
+  ' ','d','a','u','g','h','t','e','r',0, ' ','n','a','t','i','o','n','a','l',0, ' ','b','r','e','a','k',0, ' ','q','u','i','c','k',0,  /* 848..851   daughter| national| break| quick */
+  ' ','c','o','m','m','o','n',0, ' ','v','i','e','w',0, ' ','s','i','t','u','a','t','i','o','n',0, ' ','o','u','t','s','i','d','e',0,  /* 852..855   common| view| situation| outside */
+  ' ','e','a','s','t',0, ' ','c','o','m','m','u','n','i','t','y',0, ' ','r','a','t','h','e','r',0, ' ','t','h','o','u','s','a','n','d',0,  /* 856..859   east| community| rather| thousand */
+  ' ','f','u','t','u','r','e',0, ' ','c','o','n','c','e','r','n',0, ' ','s','u','c','c','e','s','s',0, ' ','n','u',0,  /* 860..863   future| concern| success| nu */
+  ' ','g','r','a','n','d',0, ' ','c','o','m','p','l','e','t','e',0, ' ','s','p','e','n','d',0, ' ','b','e','g','a','n',0,  /* 864..867   grand| complete| spend| began */
+  ' ','t','o','p','i','c',0, ' ','e','x','a','m','p','l','e',0, ' ','p','h','o','n','e',0, ' ','i','n','c','r','e','a','s','e',0,  /* 868..871   topic| example| phone| increase */
+  ' ','s','t','r','e','e','t',0, ' ','s','e','n','s','e',0, ' ','f','i','n','a','l',0, ' ','l','o','c','a','t',0,  /* 872..875   street| sense| final| locat */
+  ' ','p','e','r','f','o','r','m',0, ' ','c','h','a','r','g','e',0, ' ','r','e','c','o','r','d',0, ' ','i','n','s','t','e','a','d',0,  /* 876..879   perform| charge| record| instead */
+  ' ','w','o','m','e','n',0, ' ','i','n','f','o','r','m','a','t','i','o','n',0, ' ','c','o','u','n','t','r','i','e','s',0, ' ','b','o','r','n',0,  /* 880..883   women| information| countries| born */
+  'l','t','h','o','u','g','h',0, ' ','a','c','r','o','s',0, ' ','f','u','n','n','y',0, ' ','s','e','c','u','r','i','t','y',0,  /* 884..887  lthough| acros| funny| security */
+  ' ','c','o','l','d',0, ' ','s','m','o','k','e',0, ' ','d','e','p','e','n','d',0, ' ','t','r','e','a','t',0,  /* 888..891   cold| smoke| depend| treat */
+  ' ','p','r','o','c','e','s','s',0, ' ','c','o','n','d','i','t','i','o','n',0, ' ','t','h','e','m','s','e','l','v','e','s',0, ' ','r','e','c','e','n','t',0,  /* 892..895   process| condition| themselves| recent */
+  ' ','g','r','o','u','n','d',0, ' ','b','e','h','i','n','d',0, 'i','f','i','e','d',0, ' ','c','u','s','t','o','m',0,  /* 896..899   ground| behind|ified| custom */
+  ' ','g','o','l','d',0, ' ','d','e','s','i','g','n',0, ' ','t','h','i','r','t','y',0, ' ','t','h','i','r','d',0,  /* 900..903   gold| design| thirty| third */
+  ' ','d','r','i','n','k',0, ' ','s','t','r','a','n','g','e',0, ' ','s','l','o','w',0, ' ','p','a','r','t','i','c','u','l','a','r',0,  /* 904..907   drink| strange| slow| particular */
+  ' ','a','t','t','a','c','k',0, ' ','p','r','o','j','e','c','t',0, ' ','h','e','l','l','o',0, ' ','s','p','e','c','i','a','l',0,  /* 908..911   attack| project| hello| special */
+  ' ','l','i','s','t','e','n',0, ' ','w','r','o','n','g',0, ' ','s','p','a','c','e',0, ' ','s','t','o','r','y',0,  /* 912..915   listen| wrong| space| story */
+  ' ','i','m','p','r','o','v','e',0, ' ','e','n','g','l','i','s','h',0, ' ','h','a','p','p','y',0, ' ','v','a','l','u','e',0,  /* 916..919   improve| english| happy| value */
+  ' ','v','o','i','c','e',0, ' ','s','p','o','k','e',0, ' ','a','c','c','o','u','n','t',0, ' ','b','r','o','u','g','h','t',0,  /* 920..923   voice| spoke| account| brought */
+  ' ','g','r','e','e','n',0, ' ','p','r','i','v','a','t','e',0, ' ','c','o','n','t','r','o','l',0, ' ','m','e','d','i','a',0,  /* 924..927   green| private| control| media */
+  ' ','a','u','t','h','o','r',0, ' ','f','i','g','u','r','e',0, ' ','c','h','i','n','a',0, ' ','u','n','i','v','e','r','s','i','t','y',0,  /* 928..931   author| figure| china| university */
+  ' ','e','a','s','y',0, ' ','l','a','n','g','u','a','g','e',0, ' ','f','o','r','e','i','g','n',0, ' ','i','n','c','l','u','d',0,  /* 932..935   easy| language| foreign| includ */
+  ' ','p','l','e','a','s','e',0, ' ','e','a','s','i',0, ' ','a','c','c','o','r','d','i','n','g',0, ' ','d','e','c','i','d','e','d',0,  /* 936..939   please| easi| according| decided */
+  ' ','d','r','e','a','m',0, ' ','s','u','d','d','e','n',0, ' ','s','o','c','i','e','t','y',0, ' ','s','u','b','j','e','c','t',0,  /* 940..943   dream| sudden| society| subject */
+  'p','l','a','c','e',0, ' ','a','n','i','m','a','l',0, ' ','h','o','r','s','e',0, ' ','c','o','o','k',0,  /* 944..947  place| animal| horse| cook */
+  ' ','s','e','r','i','o','u','s',0, ' ','d','r','a','w',0, ' ','o','p','p','o','r','t','u','n','i','t',0, ' ','f','r','o','n','t',0,  /* 948..951   serious| draw| opportunit| front */
+  ' ','c','h','u','r','c','h',0, ' ','p','r','e','s','i','d','e','n','t',0, ' ','a','d','d','i','t','i','o','n',0, ' ','f','i','f','t','y',0,  /* 952..955   church| president| addition| fifty */
+  ' ','w','o','r','t','h',0, ' ','f','i','n','a','n','c','i','a','l',0, ' ','h','o','s','p','i','t','a','l',0, ' ','d','i','f','f','e','r','e','n','c','e',0,  /* 956..959   worth| financial| hospital| difference */
+  ' ','c','o','l','l','e','c','t',0, ' ','s','t','u','d','y',0, ' ','i','n','d','i','v','i','d','u','a','l',0, ' ','e','f','f','o','r','t',0,  /* 960..963   collect| study| individual| effort */
+  ' ','l','a','u','g','h',0, ' ','i','n','d','u','s','t','r','y',0, ' ','s','t','o','c','k',0, ' ','p','o','s','i','t','i','o','n',0,  /* 964..967   laugh| industry| stock| position */
+  ' ','b','a','s','i','c','a','l','l',0, ' ','s','i','m','i','l','a','r',0, ' ','r','e','g','u','l','a','r',0, ' ','c','o','n','n','e','c','t',0,  /* 968..971   basicall| similar| regular| connect */
+  ' ','r','e','s','e','a','r','c','h',0, ' ','a','c','c','e','p','t',0, ' ','r','e','s','t','a','u','r','a','n','t',0, ' ','p','r','o','t','e','c','t',0,  /* 972..975   research| accept| restaurant| protect */
+  ' ','a','m','o','u','n','t',0, ' ','w','r','i','t','e',0, ' ','d','r','o','p',0, ' ','j','o','h','n',0,  /* 976..979   amount| write| drop| john */
+  ' ','h','i','s','t','o','r','y',0, ' ','t','h','r','e','a','t',0, ' ','m','i','d','d','l','e',0, ' ','p','o','l','i','t','i','c','a','l',0,  /* 980..983   history| threat| middle| political */
+  ' ','c','r','o','s','s',0, ' ','s','l','e','e','p',0, ' ','o','r','i','g','i','n','a','l',0, ' ','p','o','p','u','l','a','r',0,  /* 984..987   cross| sleep| original| popular */
+  ' ','i','m','m','e','d','i','a','t','e',0, ' ','e','n','g','i','n','e',0, ' ','k','e','p','t',0, ' ','d','r','u','g',0,  /* 988..991   immediate| engine| kept| drug */
+  ' ','d','e','c','i','s','i','o','n',0, ' ','e','c','o','n','o','m','y',0, ' ','m','e','a','s','u','r','e',0, ' ','c','a','l','i','f','o','r','n','i','a',0,  /* 992..995   decision| economy| measure| california */
+  ' ','v','i','d','e','o',0, ' ','c','h','a','l','l','e','n','g','e',0, ' ','s','u','r','p','r','i','s','e',0, ' ','e','n','t','i','r','e',0,  /* 996..999   video| challenge| surprise| entire */
+  ' ','e','x','e','r','c','i','s','e',0, ' ','i','t','s','e','l','f',0, ' ','a','v','a','i','l','a','b','l','e',0, ' ','b','e','n','e','f','i','t',0,  /* 1000..1003   exercise| itself| available| benefit */
+  ' ','c','h','a','r','a','c','t','e','r',0, ' ','e','c','o','n','o','m','i','c',0, ' ','p','a','t','i','e','n','t',0, ' ','d','e','s','p','i','t','e',0,  /* 1004..1007   character| economic| patient| despite */
+  ' ','f','e','a','t','u','r','e',0, ' ','a','b','s','o','l','u','t','e',0, ' ','p','i','c','t','u','r','e',0, ' ','c','l','u','b',0,  /* 1008..1011   feature| absolute| picture| club */
+  ' ','f','o','o','t','b','a','l','l',0, ' ','f','o','c','u','s',0, ' ','d','i','s','c','u','s','s',0, ' ','a','l','c','h','e','m','i','s','t',0,  /* 1012..1015   football| focus| discuss| alchemist */
+  ' ','r','e','s','p','e','c','t',0, ' ','p','e','r','h','a','p','s',0, ' ','t','e','c','h','n','o','l','o','g','y',0, ' ','n','a','t','u','r','a','l',0,  /* 1016..1019   respect| perhaps| technology| natural */
+  ' ','s','u','m','m','e','r',0, ' ','o','b','s','e','r','v',0, ' ','e','x','p','r','e','s','s',0, 'q',0,  /* 1020..1023   summer| observ| express|q */
+  '<','b','l','k','>',0,  /* 1024..1024  <blk> */
+};
 
 static const uint16_t kOffset[CITRINET_VOCAB_SIZE + 1] = {
       0,     6,     8,    13,    15,    18,    21,    23,    28,    32,    35,    37,

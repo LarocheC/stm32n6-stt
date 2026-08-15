@@ -1,0 +1,1026 @@
+{
+ "model": "artifacts/onnx/q800_real.onnx",
+ "int8_source": "graph output /Transpose_output_0_QuantizeLinear_Output (pre-DequantizeLinear)",
+ "out_scale": 0.265415638685226,
+ "int8_equals_round_dequant_over_scale": true,
+ "oracle": "model/fe.py:greedy() + tokenizer/vocab.txt",
+ "decoder": "firmware/src/citrinet_ctc.c (built with -std=c99 -O2 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Werror)",
+ "corpus": "LibriSpeech dev-clean, calibration keys excluded",
+ "seed": 20260816,
+ "n_utterances": 100,
+ "frames_compared": 10000,
+ "chars_compared": 9226,
+ "text_disagreements": 0,
+ "ids_disagreements": 0,
+ "fp32_vs_int8_text_differences": 0,
+ "stress_cases": 480,
+ "stress_frames": 48000,
+ "stress_tied_argmax_frames": 39972,
+ "stress_collapsed_repeat_frames": 13218,
+ "stress_blank_frames": 4841,
+ "stress_text_disagreements": 0,
+ "stress_ids_disagreements": 0,
+ "pass": true,
+ "per_utterance": [
+  {
+   "k": "6313-66129-0034",
+   "status": 0,
+   "chars": 167,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "at the moment when he freed his left foot from the sterrup he threw his body sharply to the right reaching for the hat without taking the precaution to grass the ponel",
+   "py_text": "at the moment when he freed his left foot from the sterrup he threw his body sharply to the right reaching for the hat without taking the precaution to grass the ponel"
+  },
+  {
+   "k": "251-137823-0013",
+   "status": 0,
+   "chars": 66,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "we'd better not try to move him tom decided we'll get an ambulance",
+   "py_text": "we'd better not try to move him tom decided we'll get an ambulance"
+  },
+  {
+   "k": "84-121550-0021",
+   "status": 0,
+   "chars": 117,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "and one of them as if by heaven commissioned singing vanney sponsored dey baro shouted three times and all the others",
+   "py_text": "and one of them as if by heaven commissioned singing vanney sponsored dey baro shouted three times and all the others"
+  },
+  {
+   "k": "3170-137482-0022",
+   "status": 0,
+   "chars": 124,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "i jumped out of the gondola and found myself on the very spot where three years before i had taught rasetta such a forceible",
+   "py_text": "i jumped out of the gondola and found myself on the very spot where three years before i had taught rasetta such a forceible"
+  },
+  {
+   "k": "2035-147960-0015",
+   "status": 0,
+   "chars": 15,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "i'll wink at me",
+   "py_text": "i'll wink at me"
+  },
+  {
+   "k": "1988-148538-0000",
+   "status": 0,
+   "chars": 145,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "in aristrocratic communities the people readily give themselves up to bursts of toumultus and boisterous gaiety which shake of at once the recoll",
+   "py_text": "in aristrocratic communities the people readily give themselves up to bursts of toumultus and boisterous gaiety which shake of at once the recoll"
+  },
+  {
+   "k": "1993-147965-0006",
+   "status": 0,
+   "chars": 104,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "he sat still and passive his head resting against the back of the wooden rocking chair his hands relaxed",
+   "py_text": "he sat still and passive his head resting against the back of the wooden rocking chair his hands relaxed"
+  },
+  {
+   "k": "6295-244435-0021",
+   "status": 0,
+   "chars": 55,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "it was a different harry who sted at home laid in april",
+   "py_text": "it was a different harry who sted at home laid in april"
+  },
+  {
+   "k": "3536-8226-0021",
+   "status": 0,
+   "chars": 88,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "perhaps you could put on your coat and walk out with me for a few minutes said travalion",
+   "py_text": "perhaps you could put on your coat and walk out with me for a few minutes said travalion"
+  },
+  {
+   "k": "5536-43363-0002",
+   "status": 0,
+   "chars": 127,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "the men blacken their faces and widows are berefed parentss sometimes gash their arms and legs till they are covered with blood",
+   "py_text": "the men blacken their faces and widows are berefed parentss sometimes gash their arms and legs till they are covered with blood"
+  },
+  {
+   "k": "2902-9006-0002",
+   "status": 0,
+   "chars": 112,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "not be it ever remembered that the slightest suspicion of immorality attaches either to the heroine of this book",
+   "py_text": "not be it ever remembered that the slightest suspicion of immorality attaches either to the heroine of this book"
+  },
+  {
+   "k": "1462-170142-0018",
+   "status": 0,
+   "chars": 49,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "there is this deception between me and everything",
+   "py_text": "there is this deception between me and everything"
+  },
+  {
+   "k": "1993-147149-0006",
+   "status": 0,
+   "chars": 107,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "she opened the door softly there sat missus wilson in the old rocking chair with one sick deathlike boyline",
+   "py_text": "she opened the door softly there sat missus wilson in the old rocking chair with one sick deathlike boyline"
+  },
+  {
+   "k": "251-118436-0010",
+   "status": 0,
+   "chars": 35,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "point of contact inquired the other",
+   "py_text": "point of contact inquired the other"
+  },
+  {
+   "k": "6313-66129-0028",
+   "status": 0,
+   "chars": 28,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "tad is an experienced writer",
+   "py_text": "tad is an experienced writer"
+  },
+  {
+   "k": "6295-64301-0017",
+   "status": 0,
+   "chars": 59,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "letty too was overcome more than ever she had been by music",
+   "py_text": "letty too was overcome more than ever she had been by music"
+  },
+  {
+   "k": "6241-61943-0008",
+   "status": 0,
+   "chars": 135,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "on the eleventh day we cited cape portland over which tower mount midrell's yokel which the weather being clear we made out very rattal",
+   "py_text": "on the eleventh day we cited cape portland over which tower mount midrell's yokel which the weather being clear we made out very rattal"
+  },
+  {
+   "k": "174-50561-0005",
+   "status": 0,
+   "chars": 67,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "lady lady my rose white lady but will you not hear a round old lady",
+   "py_text": "lady lady my rose white lady but will you not hear a round old lady"
+  },
+  {
+   "k": "2035-147961-0035",
+   "status": 0,
+   "chars": 75,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "they worked in chicago de moine fort wayne but they were always unfortunate",
+   "py_text": "they worked in chicago de moine fort wayne but they were always unfortunate"
+  },
+  {
+   "k": "5536-43363-0004",
+   "status": 0,
+   "chars": 150,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "it was prepared by dressing in the finest clothes together with some personal possessions and ornaments wrapped in several robes and finally in a sick",
+   "py_text": "it was prepared by dressing in the finest clothes together with some personal possessions and ornaments wrapped in several robes and finally in a sick"
+  },
+  {
+   "k": "1988-147956-0018",
+   "status": 0,
+   "chars": 54,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "i noticed how white and well shaped his own hands were",
+   "py_text": "i noticed how white and well shaped his own hands were"
+  },
+  {
+   "k": "8297-275154-0019",
+   "status": 0,
+   "chars": 84,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "i tried it yesterday it set my brains on fire i'm feeling that glass i took just now",
+   "py_text": "i tried it yesterday it set my brains on fire i'm feeling that glass i took just now"
+  },
+  {
+   "k": "174-84280-0015",
+   "status": 0,
+   "chars": 100,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "she was destroyed not merely by the unconsidered undisciplined passions of her husband and her lover",
+   "py_text": "she was destroyed not merely by the unconsidered undisciplined passions of her husband and her lover"
+  },
+  {
+   "k": "7976-105575-0003",
+   "status": 0,
+   "chars": 119,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "there were no breastworks yet that one little bregrade of hamilton's division stood there in the open and repulsed a so",
+   "py_text": "there were no breastworks yet that one little bregrade of hamilton's division stood there in the open and repulsed a so"
+  },
+  {
+   "k": "1462-170142-0042",
+   "status": 0,
+   "chars": 32,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "don't cry don't cry he whispered",
+   "py_text": "don't cry don't cry he whispered"
+  },
+  {
+   "k": "6345-93306-0024",
+   "status": 0,
+   "chars": 167,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "the silver is all right thank goodness she said but your bando girl has taken a pair of your sisters silk stockings and those new shoes of hers with the silver buckles",
+   "py_text": "the silver is all right thank goodness she said but your bando girl has taken a pair of your sisters silk stockings and those new shoes of hers with the silver buckles"
+  },
+  {
+   "k": "6295-244435-0026",
+   "status": 0,
+   "chars": 48,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "it was almost buried now in flowers and foliards",
+   "py_text": "it was almost buried now in flowers and foliards"
+  },
+  {
+   "k": "2412-153948-0000",
+   "status": 0,
+   "chars": 133,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "if the reader will excuse me i will say nothing of my antticacedents nor of the circumstances which led me to leave my native country",
+   "py_text": "if the reader will excuse me i will say nothing of my antticacedents nor of the circumstances which led me to leave my native country"
+  },
+  {
+   "k": "422-122949-0011",
+   "status": 0,
+   "chars": 131,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "the most varied experience teaches it what are the qualities to which it principally owes the fact that it still exists in spite of",
+   "py_text": "the most varied experience teaches it what are the qualities to which it principally owes the fact that it still exists in spite of"
+  },
+  {
+   "k": "422-122949-0003",
+   "status": 0,
+   "chars": 121,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "it is obvious that everywhere the designations of moral value were at first applied to men and were only derivatively and",
+   "py_text": "it is obvious that everywhere the designations of moral value were at first applied to men and were only derivatively and"
+  },
+  {
+   "k": "84-121550-0005",
+   "status": 0,
+   "chars": 114,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "some apprehension keeps you marvelling but theslm delicctasse giveth light which has the power to uncloud your int",
+   "py_text": "some apprehension keeps you marvelling but theslm delicctasse giveth light which has the power to uncloud your int"
+  },
+  {
+   "k": "2078-142845-0007",
+   "status": 0,
+   "chars": 91,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "then place the pan on a strong chair or dresser or table of convenient height pour into the",
+   "py_text": "then place the pan on a strong chair or dresser or table of convenient height pour into the"
+  },
+  {
+   "k": "1988-148538-0005",
+   "status": 0,
+   "chars": 132,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "i do not believe in such republics any more than in that of plato or if the things we you read off really happened i do not hesitate",
+   "py_text": "i do not believe in such republics any more than in that of plato or if the things we you read off really happened i do not hesitate"
+  },
+  {
+   "k": "3081-166546-0000",
+   "status": 0,
+   "chars": 111,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "when we took our seats at the breakfast table it was with the feeling of being no longer looked upon as connect",
+   "py_text": "when we took our seats at the breakfast table it was with the feeling of being no longer looked upon as connect"
+  },
+  {
+   "k": "3752-4943-0018",
+   "status": 0,
+   "chars": 71,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "have you ever been in that that place i was in last night asked kirklin",
+   "py_text": "have you ever been in that that place i was in last night asked kirklin"
+  },
+  {
+   "k": "3752-4944-0066",
+   "status": 0,
+   "chars": 107,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "twice he paused on the way to the sitting room and twice was he driven on by a power stronger than his will",
+   "py_text": "twice he paused on the way to the sitting room and twice was he driven on by a power stronger than his will"
+  },
+  {
+   "k": "1919-142785-0017",
+   "status": 0,
+   "chars": 92,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "the lemon this fruit is a native of asia and is mentioned by virgil as an antidote to poison",
+   "py_text": "the lemon this fruit is a native of asia and is mentioned by virgil as an antidote to poison"
+  },
+  {
+   "k": "6313-66129-0015",
+   "status": 0,
+   "chars": 155,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "as yet they had been unable to attempt any fancy writing with their ponies owing to the rugged nature of the country through which they had been journeying",
+   "py_text": "as yet they had been unable to attempt any fancy writing with their ponies owing to the rugged nature of the country through which they had been journeying"
+  },
+  {
+   "k": "6313-76958-0021",
+   "status": 0,
+   "chars": 138,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "keep a going and if your're lucky you'll run plum into them was the jeering answers the sleepy cow and spurred their ponies on toward camp",
+   "py_text": "keep a going and if your're lucky you'll run plum into them was the jeering answers the sleepy cow and spurred their ponies on toward camp"
+  },
+  {
+   "k": "2277-149896-0024",
+   "status": 0,
+   "chars": 92,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "he knew her well enough to know that when she had decided upon a plan she would follow it up",
+   "py_text": "he knew her well enough to know that when she had decided upon a plan she would follow it up"
+  },
+  {
+   "k": "251-137823-0010",
+   "status": 0,
+   "chars": 116,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "the sky was visible through several gaping holes in the roof which was sagging dangerously on its supporting tresses",
+   "py_text": "the sky was visible through several gaping holes in the roof which was sagging dangerously on its supporting tresses"
+  },
+  {
+   "k": "5536-43363-0018",
+   "status": 0,
+   "chars": 144,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "many of the indians believed that one may be borne more than once and there were some who claimed to have full knowledge of a former incarnation",
+   "py_text": "many of the indians believed that one may be borne more than once and there were some who claimed to have full knowledge of a former incarnation"
+  },
+  {
+   "k": "6313-76958-0015",
+   "status": 0,
+   "chars": 52,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "see she grumbled turned over and went to sleep again",
+   "py_text": "see she grumbled turned over and went to sleep again"
+  },
+  {
+   "k": "2035-147960-0011",
+   "status": 0,
+   "chars": 63,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "we decided that antony i should ride dude home and i would walk",
+   "py_text": "we decided that antony i should ride dude home and i would walk"
+  },
+  {
+   "k": "3000-15664-0012",
+   "status": 0,
+   "chars": 120,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "then the shining of the wet leaves is delightful and the steamy fragrance and the burst of bird song from a multitude of",
+   "py_text": "then the shining of the wet leaves is delightful and the steamy fragrance and the burst of bird song from a multitude of"
+  },
+  {
+   "k": "2902-9008-0007",
+   "status": 0,
+   "chars": 77,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "i to believe against the authority of porphy himself too in evilies and magic",
+   "py_text": "i to believe against the authority of porphy himself too in evilies and magic"
+  },
+  {
+   "k": "6313-66125-0016",
+   "status": 0,
+   "chars": 126,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "slowly but steadly the slender line was paid out amid a tense silence on the part of the little group at the top of the canyon",
+   "py_text": "slowly but steadly the slender line was paid out amid a tense silence on the part of the little group at the top of the canyon"
+  },
+  {
+   "k": "8297-275155-0000",
+   "status": 0,
+   "chars": 98,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "on the next day but one randaal arranged his departure for sidenm so as to arrive at the hotel and",
+   "py_text": "on the next day but one randaal arranged his departure for sidenm so as to arrive at the hotel and"
+  },
+  {
+   "k": "8842-302203-0004",
+   "status": 0,
+   "chars": 132,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "in my hue was such that they looked at each other and thought of death saying under their breath most tenderly oh let us comfort him",
+   "py_text": "in my hue was such that they looked at each other and thought of death saying under their breath most tenderly oh let us comfort him"
+  },
+  {
+   "k": "2277-149897-0026",
+   "status": 0,
+   "chars": 131,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "he had loved her earnestly enough but now that the possibility of losing her stared him in the face she seemed much more attractive",
+   "py_text": "he had loved her earnestly enough but now that the possibility of losing her stared him in the face she seemed much more attractive"
+  },
+  {
+   "k": "2277-149896-0018",
+   "status": 0,
+   "chars": 69,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "his first impulse was to write but for words in reply go to the devil",
+   "py_text": "his first impulse was to write but for words in reply go to the devil"
+  },
+  {
+   "k": "6319-275224-0003",
+   "status": 0,
+   "chars": 101,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "my young plants require heat or they would not live and the pots we are kept in protect us from those",
+   "py_text": "my young plants require heat or they would not live and the pots we are kept in protect us from those"
+  },
+  {
+   "k": "174-168635-0022",
+   "status": 0,
+   "chars": 45,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "he was that child's stay and she was his prop",
+   "py_text": "he was that child's stay and she was his prop"
+  },
+  {
+   "k": "422-122949-0033",
+   "status": 0,
+   "chars": 77,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "i do not know he said hesitatingly perhaps the harps have flown over my table",
+   "py_text": "i do not know he said hesitatingly perhaps the harps have flown over my table"
+  },
+  {
+   "k": "652-130726-0034",
+   "status": 0,
+   "chars": 136,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "under ordinary circumstances the abalony is tough and unpllidable but after the deat manipulation of herbert they are tender and make of",
+   "py_text": "under ordinary circumstances the abalony is tough and unpllidable but after the deat manipulation of herbert they are tender and make of"
+  },
+  {
+   "k": "652-130726-0009",
+   "status": 0,
+   "chars": 70,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "the cuisine is of the best and the chef's rank at the top of their art",
+   "py_text": "the cuisine is of the best and the chef's rank at the top of their art"
+  },
+  {
+   "k": "3576-138058-0006",
+   "status": 0,
+   "chars": 34,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "oh no traiter exclaimed don quiote",
+   "py_text": "oh no traiter exclaimed don quiote"
+  },
+  {
+   "k": "1993-147149-0020",
+   "status": 0,
+   "chars": 131,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "mary i almost loathe myself when i feel i would not give up this minute when my brothers lie dead and father and mother are in such",
+   "py_text": "mary i almost loathe myself when i feel i would not give up this minute when my brothers lie dead and father and mother are in such"
+  },
+  {
+   "k": "6345-64257-0012",
+   "status": 0,
+   "chars": 43,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "but living soul there could be none to meet",
+   "py_text": "but living soul there could be none to meet"
+  },
+  {
+   "k": "1988-148538-0009",
+   "status": 0,
+   "chars": 115,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "if i say to an american that the country he lives in is a fine one ay he replies there is not a fellow in the world",
+   "py_text": "if i say to an american that the country he lives in is a fine one ay he replies there is not a fellow in the world"
+  },
+  {
+   "k": "8842-302203-0000",
+   "status": 0,
+   "chars": 146,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "and at the first it seemed to me that i saw certain faces of women with their hair loosened which called out to me thou shalt surely die after the",
+   "py_text": "and at the first it seemed to me that i saw certain faces of women with their hair loosened which called out to me thou shalt surely die after the"
+  },
+  {
+   "k": "5895-34622-0011",
+   "status": 0,
+   "chars": 105,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "some believed it to be natural others declared it to be artificial and as conjecture was added to reality",
+   "py_text": "some believed it to be natural others declared it to be artificial and as conjecture was added to reality"
+  },
+  {
+   "k": "2277-149896-0031",
+   "status": 0,
+   "chars": 52,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "he would go in and see anyhow he would have no round",
+   "py_text": "he would go in and see anyhow he would have no round"
+  },
+  {
+   "k": "5338-24615-0007",
+   "status": 0,
+   "chars": 130,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "the house which seemed to consist of two or three high narrow and steep roofed buildings projecting from each other at right angle",
+   "py_text": "the house which seemed to consist of two or three high narrow and steep roofed buildings projecting from each other at right angle"
+  },
+  {
+   "k": "2035-147961-0010",
+   "status": 0,
+   "chars": 50,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "he seemed to be cursing people who had wronged him",
+   "py_text": "he seemed to be cursing people who had wronged him"
+  },
+  {
+   "k": "8297-275156-0011",
+   "status": 0,
+   "chars": 80,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "shall i say that she may expect an early visit from you when i see her to morrow",
+   "py_text": "shall i say that she may expect an early visit from you when i see her to morrow"
+  },
+  {
+   "k": "3081-166546-0048",
+   "status": 0,
+   "chars": 37,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "well well that's honest at all events",
+   "py_text": "well well that's honest at all events"
+  },
+  {
+   "k": "422-122949-0016",
+   "status": 0,
+   "chars": 71,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "what will the moral philosophers who appear at this time have to preach",
+   "py_text": "what will the moral philosophers who appear at this time have to preach"
+  },
+  {
+   "k": "2803-161169-0013",
+   "status": 0,
+   "chars": 86,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "then the hills were piled up on top of it all but here and there some edge of a co bed",
+   "py_text": "then the hills were piled up on top of it all but here and there some edge of a co bed"
+  },
+  {
+   "k": "3081-166546-0087",
+   "status": 0,
+   "chars": 84,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "no weapon protruded from the wound nor was any found on or near her in the mezzanine",
+   "py_text": "no weapon protruded from the wound nor was any found on or near her in the mezzanine"
+  },
+  {
+   "k": "3752-4944-0032",
+   "status": 0,
+   "chars": 69,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "mister mekan expressed some alarm but doctor macolllwan reassured him",
+   "py_text": "mister mekan expressed some alarm but doctor macolllwan reassured him"
+  },
+  {
+   "k": "2428-83705-0023",
+   "status": 0,
+   "chars": 67,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "i know what mamma can afford to give and i will see if she gives it",
+   "py_text": "i know what mamma can afford to give and i will see if she gives it"
+  },
+  {
+   "k": "1272-135031-0014",
+   "status": 0,
+   "chars": 13,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "where is that",
+   "py_text": "where is that"
+  },
+  {
+   "k": "7850-286674-0017",
+   "status": 0,
+   "chars": 34,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "the nymphs had already gotten away",
+   "py_text": "the nymphs had already gotten away"
+  },
+  {
+   "k": "2035-147961-0039",
+   "status": 0,
+   "chars": 85,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "when he was out hunting he used to go into the empty log house and sit there brooding",
+   "py_text": "when he was out hunting he used to go into the empty log house and sit there brooding"
+  },
+  {
+   "k": "1272-141231-0025",
+   "status": 0,
+   "chars": 103,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "others had died before during the twenties and death during the last round was in some ways easier than",
+   "py_text": "others had died before during the twenties and death during the last round was in some ways easier than"
+  },
+  {
+   "k": "3752-4944-0048",
+   "status": 0,
+   "chars": 64,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "i am a minister of god sir and i forbid you to commit this crime",
+   "py_text": "i am a minister of god sir and i forbid you to commit this crime"
+  },
+  {
+   "k": "3536-23268-0004",
+   "status": 0,
+   "chars": 50,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "i hope miss melner you passed this evening at home",
+   "py_text": "i hope miss melner you passed this evening at home"
+  },
+  {
+   "k": "6241-61946-0006",
+   "status": 0,
+   "chars": 153,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "i could not help smiling to see him look so big on his little horse his long legs now and then touching the ground made him look like a six footed centur",
+   "py_text": "i could not help smiling to see him look so big on his little horse his long legs now and then touching the ground made him look like a six footed centur"
+  },
+  {
+   "k": "7976-110124-0015",
+   "status": 0,
+   "chars": 92,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "then she heard him go down the stairway and un both the heavy doors which led into the store",
+   "py_text": "then she heard him go down the stairway and un both the heavy doors which led into the store"
+  },
+  {
+   "k": "2412-153954-0018",
+   "status": 0,
+   "chars": 155,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "they felt my puls they looked at my tongue they listened at my chest they felt all my muscles and at the end of each operation they looked at the chief and",
+   "py_text": "they felt my puls they looked at my tongue they listened at my chest they felt all my muscles and at the end of each operation they looked at the chief and"
+  },
+  {
+   "k": "2428-83705-0016",
+   "status": 0,
+   "chars": 59,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "there were no signs of faltering about her flow of language",
+   "py_text": "there were no signs of faltering about her flow of language"
+  },
+  {
+   "k": "3170-137482-0021",
+   "status": 0,
+   "chars": 135,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "i rubbed it with all my strength but he told me in a sort of indistinct whisper that the numbness was spreading all along the left side",
+   "py_text": "i rubbed it with all my strength but he told me in a sort of indistinct whisper that the numbness was spreading all along the left side"
+  },
+  {
+   "k": "2428-83699-0019",
+   "status": 0,
+   "chars": 68,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "there was a trap at the boy in blunderbus but that required fetching",
+   "py_text": "there was a trap at the boy in blunderbus but that required fetching"
+  },
+  {
+   "k": "1673-143396-0008",
+   "status": 0,
+   "chars": 124,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "many among the gentile prozoleites refused to believe that a celestial spirit and undivided portion of the first essence had",
+   "py_text": "many among the gentile prozoleites refused to believe that a celestial spirit and undivided portion of the first essence had"
+  },
+  {
+   "k": "652-130726-0003",
+   "status": 0,
+   "chars": 103,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "here as well as in a number of other places one can well appreciate the colloquial definition of cabare",
+   "py_text": "here as well as in a number of other places one can well appreciate the colloquial definition of cabare"
+  },
+  {
+   "k": "2277-149896-0003",
+   "status": 0,
+   "chars": 42,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "he also thought of his managerial position",
+   "py_text": "he also thought of his managerial position"
+  },
+  {
+   "k": "2803-154328-0018",
+   "status": 0,
+   "chars": 101,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "their fingers bled but still they worked on after half an hour they had gone three feet beep they put",
+   "py_text": "their fingers bled but still they worked on after half an hour they had gone three feet beep they put"
+  },
+  {
+   "k": "3576-138058-0010",
+   "status": 0,
+   "chars": 117,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "sancho rose and removed some distance from the spot but as he was about to place himself leaning against another tree",
+   "py_text": "sancho rose and removed some distance from the spot but as he was about to place himself leaning against another tree"
+  },
+  {
+   "k": "2035-147961-0025",
+   "status": 0,
+   "chars": 54,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "and the wolves pabel asked enough enough for all of us",
+   "py_text": "and the wolves pabel asked enough enough for all of us"
+  },
+  {
+   "k": "3576-138058-0015",
+   "status": 0,
+   "chars": 123,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "he was mounted upon a powerful horse and had on a coat of mail with four of the pistols they call paternels in that country",
+   "py_text": "he was mounted upon a powerful horse and had on a coat of mail with four of the pistols they call paternels in that country"
+  },
+  {
+   "k": "1462-170142-0037",
+   "status": 0,
+   "chars": 57,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "i will ask the least imaginable but i must have something",
+   "py_text": "i will ask the least imaginable but i must have something"
+  },
+  {
+   "k": "3081-166546-0001",
+   "status": 0,
+   "chars": 113,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "instantly they absorbed all my attention though i dared not give them a direct look and continued to observe them",
+   "py_text": "instantly they absorbed all my attention though i dared not give them a direct look and continued to observe them"
+  },
+  {
+   "k": "2428-83705-0006",
+   "status": 0,
+   "chars": 57,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "the accident in question occurred upon the sunday evening",
+   "py_text": "the accident in question occurred upon the sunday evening"
+  },
+  {
+   "k": "5895-34622-0019",
+   "status": 0,
+   "chars": 117,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "a loft under the arch of the roof contained the scenes and on opening a trap door lamps appeared producing wonders of",
+   "py_text": "a loft under the arch of the roof contained the scenes and on opening a trap door lamps appeared producing wonders of"
+  },
+  {
+   "k": "6241-66616-0006",
+   "status": 0,
+   "chars": 90,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "meanwhile two children came to bless the happy union of newsame and his lovely indian wife",
+   "py_text": "meanwhile two children came to bless the happy union of newsame and his lovely indian wife"
+  },
+  {
+   "k": "2412-153954-0022",
+   "status": 0,
+   "chars": 59,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "the design was different but the thing was clearly the same",
+   "py_text": "the design was different but the thing was clearly the same"
+  },
+  {
+   "k": "1993-147149-0004",
+   "status": 0,
+   "chars": 124,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "margaret met je wilson several days after his brothers were seriously ill and heard from him the state of things at his home",
+   "py_text": "margaret met je wilson several days after his brothers were seriously ill and heard from him the state of things at his home"
+  },
+  {
+   "k": "2277-149897-0004",
+   "status": 0,
+   "chars": 105,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "he was getting some vague comfort out of a good cigar but it was no piacia for the ill which affected him",
+   "py_text": "he was getting some vague comfort out of a good cigar but it was no piacia for the ill which affected him"
+  },
+  {
+   "k": "2277-149897-0024",
+   "status": 0,
+   "chars": 55,
+   "text_match": true,
+   "ids_match": true,
+   "f32_vs_int8_text_match": true,
+   "c_text": "it seemed as if his family troubles were just beginning",
+   "py_text": "it seemed as if his family troubles were just beginning"
+  }
+ ]
+}

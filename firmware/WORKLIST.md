@@ -589,8 +589,15 @@ Cheap, self-contained, fully testable on the host. **0.5 d.**
 |---|---|---|---|---|
 | 6.1 | ~~Tokenizer table generator~~ | `firmware/tools/gen_tokenizer.py` | **done** | mechanical |
 | 6.2 | ~~Generated vocabulary header~~ | `firmware/inc/citrinet_vocab.h` | **done** | mechanical |
-| 6.3 | `citrinet_ctc_decode()` — argmax, collapse repeats, drop blank, concatenate | `firmware/src/ctc_decode.c` | 2 h | mechanical |
-| 6.4 | Host oracle test against `model/fe.py:greedy()` on ≥20 dev-clean utterances | host | 2 h | mechanical |
+| 6.3 | ~~`citrinet_ctc_decode()` — argmax, collapse repeats, drop blank, concatenate~~ | `firmware/src/citrinet_ctc.c`, `firmware/inc/citrinet_ctc.h` | **done** | mechanical |
+| 6.4 | ~~Host oracle test against `model/fe.py:greedy()` on ≥20 dev-clean utterances~~ | `firmware/test/` | **done** | mechanical |
+
+**Gate 6 is closed.** 100 dev-clean utterances (calibration-disjoint, seed 20260816)
+decoded by the C implementation and by `model/fe.py:greedy()` from the same int8
+tensor: **0 text disagreements over 9,226 characters, 0 argmax disagreements over
+10,000 frames**, plus 480 synthetic logit matrices (39,972 of 48,000 frames carrying
+a tied argmax) with 0 disagreements. Evidence: `firmware/test/results/gate6_ctc.json`,
+reproduce with `python firmware/test/run_gate6.py 100`.
 
 ### 6.1/6.2 are complete and verified
 
@@ -631,7 +638,18 @@ Tables are file-static; include the header from **exactly one** translation unit
 Verified by compiling the header and dumping all 1025 strings from C, then diffing against
 the Python-side `vocab.txt` with U+2581→space: **identical, 1025/1025**.
 `strlen(citrinet_piece(i)) == citrinet_piece_len(i)` for all i.
-Re-run and re-check at any time with `python3 firmware/tools/gen_tokenizer.py --check`.
+Re-run and re-check at any time with `python3 firmware/tools/gen_tokenizer.py --check`,
+which now also diffs the regenerated header against the one on disk, so it fails if
+`citrinet_vocab.h` has been hand-edited or has drifted from `tokenizer/vocab.txt`.
+
+**One defect found and fixed at Gate 6.** `kPieces[]` was emitted as adjacent string
+literals, which concatenate into a single **6,170-character** literal. C99 5.2.4.1 only
+requires an implementation to support 4,095, so `-Wpedantic` rejects the header
+(`-Woverlength-strings`) and MISRA C:2012 Rule 1.1 forbids it. The generator now emits
+character constants instead. The `.rodata` is **byte-for-byte identical** between the two
+forms (`cmp` of `objcopy --only-section=.rodata` output, 8,222 B both ways) — only the
+source representation changed, and the whole Gate 6 unit now builds under
+`-Wall -Wextra -Wpedantic -Wconversion -Wshadow -Werror`.
 
 ### 6.3 The decoder
 
@@ -657,6 +675,41 @@ for (uint32_t t = 0; t < 100; t++) {
 
 Ties: `>` keeps the lowest index, matching NumPy `argmax`. Worst case output length is
 100 frames × 12 B = 1,200 B; a 1,280 B buffer is enough for any input.
+
+**What shipped** (`firmware/inc/citrinet_ctc.h`, `firmware/src/citrinet_ctc.c`):
+
+```c
+citrinet_ctc_status_t citrinet_ctc_argmax(const int8_t *logits, uint32_t n_frames,
+                                          uint16_t *ids);
+citrinet_ctc_status_t citrinet_ctc_ids_to_text(const uint16_t *ids, uint32_t n_frames,
+                                               char *text, uint32_t cap, uint32_t *n_written);
+citrinet_ctc_status_t citrinet_ctc_decode(const int8_t *logits, uint32_t n_frames,
+                                          char *text, uint32_t cap, uint32_t *n_written,
+                                          uint16_t *ids /* may be NULL */);
+const char *citrinet_ctc_piece(uint32_t id);
+```
+
+`citrinet_ctc_argmax()` is split out because **Gate 4 needs exactly that and nothing
+else** — it takes no vocabulary and no text buffer. `cap` includes the NUL; overflow
+returns `CITRINET_CTC_E_TRUNC` with a valid NUL-terminated prefix rather than
+truncating silently. `CITRINET_CTC_TEXT_CAP` is 1,201 B (100 × 12 + 1), asserted at
+compile time against `CITRINET_MAX_PIECE_LEN`; `citrinet_ctc_decode()` with
+`ids == NULL` uses a 512 B automatic array, so nothing allocates.
+
+Measured cost, `arm-none-eabi-gcc 14.3.1 -mcpu=cortex-m55 -Os -ffunction-sections`:
+
+| symbol | bytes |
+|---|---:|
+| `citrinet_ctc_argmax` | 68 |
+| `citrinet_ctc_ids_to_text` | 364 |
+| `citrinet_ctc_decode` | 66 |
+| `citrinet_ctc_piece` | 36 + 1 rodata |
+| `kPieces` + `kOffset` (§6.2) | 8,222 |
+| **total flash for Gate 6** | **8,757** |
+
+`.data` and `.bss` are both **0** and `arm-none-eabi-nm -u` lists **no undefined
+symbols**: the translation unit's only include is `<stdint.h>`, so it links against
+neither libc nor the HAL.
 
 ---
 

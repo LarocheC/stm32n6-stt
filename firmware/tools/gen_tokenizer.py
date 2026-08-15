@@ -20,11 +20,23 @@ Layout emitted
 Because every piece is NUL-terminated in place, `&kPieces[kOffset[id]]` is a
 plain C string and can be handed straight to strcat/UTIL_LCD_DisplayStringAt.
 
+kPieces[] is emitted as a `char` array of character constants rather than as
+one long string literal: C99 5.2.4.1 only requires an implementation to
+support 4,095 characters in a string literal after concatenation, and the blob
+is 6,170.  GCC accepts the literal form but `-Wpedantic` rejects it
+(-Woverlength-strings), and MISRA C:2012 Rule 1.1 forbids exceeding a
+translation limit.  The array form costs nothing at run time -- identical
+.rodata, byte for byte.
+
 Usage
 -----
     python3 firmware/tools/gen_tokenizer.py                  # repo-root relative
     python3 firmware/tools/gen_tokenizer.py --check          # verify only, no write
     python3 firmware/tools/gen_tokenizer.py -i V -o H
+
+--check validates tokenizer/vocab.txt, re-derives the header and diffs it
+against the file already on disk, so it is a genuine regression check: it
+fails if citrinet_vocab.h has been hand-edited or has drifted from the vocab.
 """
 
 from __future__ import annotations
@@ -85,20 +97,22 @@ def check_charset(pieces: list[str]) -> int:
     return sum(1 for p in pieces if SPACE_MARKER in p)
 
 
-def c_escape(s: str) -> str:
-    out = []
-    for ch in s:
-        if ch == "\\":
-            out.append("\\\\")
-        elif ch == '"':
-            out.append('\\"')
-        elif ch == "?":
-            out.append("\\?")  # defeat trigraphs
-        elif 0x20 <= ord(ch) <= 0x7E:
-            out.append(ch)
-        else:
-            raise SystemExit(f"unencodable char U+{ord(ch):04X} in {s!r}")
-    return "".join(out)
+def c_char(ch: str) -> str:
+    """One byte as a C character constant."""
+    if ch == "\0":
+        return "0"
+    if ch == "\\":
+        return "'\\\\'"
+    if ch == "'":
+        return "'\\''"
+    if 0x20 <= ord(ch) <= 0x7E:
+        return f"'{ch}'"
+    raise SystemExit(f"unencodable char U+{ord(ch):04X}")
+
+
+def c_comment(s: str) -> str:
+    """Piece rendered safely inside a /* */ comment."""
+    return s.replace("*/", "*_/")
 
 
 def build(pieces: list[str]) -> tuple[list[str], list[int], int]:
@@ -155,17 +169,20 @@ def emit(pieces: list[str], ascii_pieces: list[str], offsets: list[int],
     a("/* Include this header from exactly ONE translation unit (the CTC decoder);")
     a("   the tables are file-static so a second includer would duplicate 8 KB. */")
     a("")
-    a("static const char kPieces[CITRINET_PIECES_BYTES] =")
+    a("/* NUL-separated pieces.  Emitted as character constants, not as a string")
+    a("   literal: the blob exceeds C99's 4,095-character translation limit for a")
+    a("   string literal after concatenation (5.2.4.1). */")
+    a("static const char kPieces[CITRINET_PIECES_BYTES] = {")
 
-    # Emit the blob as adjacent string literals, one line per ~10 pieces,
-    # with an explicit \0 between pieces (the implicit terminator of a string
-    # literal is NOT emitted when literals are concatenated).
-    per_line = 8
+    # Four pieces per line, each byte an explicit character constant and an
+    # explicit 0 terminator, with the source pieces echoed in a comment.
+    per_line = 4
     for start in range(0, n, per_line):
         chunk = ascii_pieces[start:start + per_line]
-        body = "".join(c_escape(p) + "\\0" for p in chunk)
-        a(f'  "{body}"   /* {start}..{start + len(chunk) - 1} */')
-    a(";")
+        body = " ".join("".join(c_char(ch) + "," for ch in p) + "0," for p in chunk)
+        label = "|".join(c_comment(p) for p in chunk)
+        a(f"  {body}  /* {start}..{start + len(chunk) - 1}  {label} */")
+    a("};")
     a("")
     a(f"static const uint16_t kOffset[CITRINET_VOCAB_SIZE + 1] = {{")
     per_line = 12
@@ -223,10 +240,22 @@ def main() -> int:
     print(f"kOffset  (uint16 x{len(offsets)}): {off_bytes} B")
     print(f"total .rodata          : {blob_bytes + off_bytes} B")
 
+    text = emit(pieces, ascii_pieces, offsets, blob_bytes, args.input)
+
     if args.check:
+        if not os.path.exists(args.output):
+            print(f"CHECK FAILED: {args.output} does not exist", file=sys.stderr)
+            return 1
+        with open(args.output, encoding="ascii", newline="") as f:
+            have = f.read()
+        if have != text:
+            print(f"CHECK FAILED: {args.output} differs from the regenerated "
+                  f"header ({len(have)} B on disk vs {len(text)} B derived)",
+                  file=sys.stderr)
+            return 1
+        print(f"check OK: {args.output} matches the vocabulary byte for byte")
         return 0
 
-    text = emit(pieces, ascii_pieces, offsets, blob_bytes, args.input)
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
     with open(args.output, "w", encoding="ascii", newline="\n") as f:
         f.write(text)
