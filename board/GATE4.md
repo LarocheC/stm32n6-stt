@@ -85,21 +85,6 @@ Worth distinguishing, in order:
    hangs under gdb but runs from flash, the difference is the boot path, not our
    graph. This is the single most informative experiment and needs no flips.
 
-## What to test next, cheapest first
-
-1. **Read `0x70400000` from the target while halted, under gdb**, after
-   `Ext_Mem_Config()` has run. If the M55 cannot read it either, external memory is
-   not mapped in this mode and the hypothesis is confirmed without a single flip.
-   Compare the first 32 bytes against `network_data.bin`.
-2. **Check `Ext_Mem_Config()`** (`audio_bm.c:834`) for what it actually maps, and
-   whether the stock app relies on the FSBL having done it.
-3. **If confirmed**, the fix is either to extend `Ext_Mem_Config()` to map xSPI2 for
-   NPU reads in dev mode, or to accept that Gate 4 runs only from flash.
-4. **Rule out the alternative**: the NPU may be stalled for an unrelated reason —
-   `NPU_Config()`, the epoch controller, or cache configuration. Reading the ATON
-   status registers while halted would distinguish "waiting on memory" from
-   "never started".
-
 ## What this does not cast doubt on
 
 The graph itself compiles to 628 epochs with **0 software and 0 hybrid epochs**
