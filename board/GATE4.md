@@ -1,6 +1,10 @@
 # Gate 4 — Citrinet on silicon, canned features
 
-**Status: NOT PASSING. The model loads; the NPU invoke does not return.**
+**Status: NOT PASSING under gdb. The NPU executes but is pathologically slow.**
+
+> Superseded reading: this document first said the invoke "hangs". It does not.
+> The runtime is progressing through epoch blocks the whole time — see
+> "The NPU is running" below. The symptom is speed, not a stall.
 
 Goal: feed one host-computed int8 `[80,800]` tensor straight to the NPU and compare
 the device's per-frame argmax against host ONNX Runtime, with the microphone, the
@@ -93,3 +97,82 @@ against ST's own memory geometry, verified three times. Gate 1's accuracy result
 unproven is only that this part can *execute* the graph — which is precisely what
 Gate 4 exists to establish, and precisely why it is sequenced before any of our
 front-end or decoder code exists to be blamed.
+
+
+---
+
+# Round 2 — two hypotheses refuted, and the invoke is not stuck
+
+## Refuted: epoch count
+
+The suggestion was that the part stalls on graphs with many epochs (ours has 628;
+ST's AED model has 44 and runs). Tested directly by truncating `q800_real.onnx`
+at `/encoder/encoder.2/mconv.5/conv/...` and compiling the prefix with **identical**
+options, mpool, and runtime:
+
+| | full | truncated |
+|---|---:|---:|
+| ONNX nodes | 1922 | 138 |
+| epochs | 628 | **45** |
+| SW / hybrid epochs | 0 / 0 | 0 / 0 |
+| weights in octoFlash | 9,728 KB | **540 KB** |
+| input | 64,000 B | 64,000 B |
+
+Same operator mix, including the squeeze-excite blocks. **The 45-epoch graph
+behaves exactly like the 628-epoch one.** Epoch count is not the variable, and
+neither is weight volume at an 18× difference.
+
+## Refuted: the async completion interrupt
+
+The build defines `LL_ATON_RT_MODE=LL_ATON_RT_ASYNC`, so a synchronous run
+plausibly waited on an NPU interrupt that never fired. Rebuilt with
+`LL_ATON_RT_MODE=LL_ATON_RT_POLLING` (`ll_aton_config.h:86`), which removes
+interrupts from the path entirely. **Identical behaviour.**
+
+## The NPU is running
+
+With breakpoints inside the generated epoch code, the runtime is demonstrably
+progressing:
+
+```
+LL_ATON_EC_Inference_Init_network      network.c:142
+LL_ATON_End_EpochBlock_2               network.c:264
+LL_ATON_End_EpochBlock_10              network.c:2477
+  ← __LL_ATON_RT_ExecEndEpochBlock   ll_aton_runtime.c:242
+  ← LL_ATON_RT_RunEpochBlock         ll_aton_runtime.c:665
+  ← __ll_aton_stai_run_synchonously  ll_aton_stai_internal.c:371
+```
+
+Epochs start, execute and complete. Nothing is deadlocked. But **45 epochs do not
+finish in ten minutes**, against a scheduler estimate of tens of milliseconds for
+the whole 628-epoch graph. That is four to five orders of magnitude, which is a
+throughput problem, not a logic one.
+
+## Leading hypothesis: external-flash bandwidth without the FSBL
+
+The NPU streams weights from octoFlash at `0x70400000`. In **boot-from-flash**
+mode the FSBL configures xSPI2 for fast octal DTR before handing over. Under
+**gdb in development mode there is no FSBL** — only the application's own
+`Ext_Mem_Config()`, written for a stock app whose weights ST flashes as part of
+the same image.
+
+Reads *work* in this mode — that was verified byte-for-byte at six addresses —
+but working and fast are different claims, and only the first was tested. If the
+interface falls back to single-line SPI at a low clock, every weight fetch costs
+orders of magnitude more, epochs still complete one by one, and the run takes
+minutes instead of milliseconds. That matches every observation, including why
+weight volume did not change the outcome: 540 KB at a crippled rate is still
+far beyond any patience.
+
+**This predicts Gate 4 passes when booted from flash**, which is how the demo
+actually runs. The gdb harness would then be unusable for NPU timing — useful for
+control flow, useless for throughput — which is worth knowing on its own.
+
+## Next
+
+1. Restore the full Citrinet model (the truncated graph is currently installed),
+   flash app and weights, boot from flash, and read the UART. One switch flip.
+2. If it passes there, record that dev-mode gdb cannot be used for inference
+   timing and move the Gate 4 measurement to flash boot permanently.
+3. If it also stalls from flash, the hypothesis is wrong and the next suspect is
+   the xSPI configuration itself rather than who performed it.
