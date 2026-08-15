@@ -6,22 +6,26 @@ Neural-ART NPU** → greedy CTC decode → text on the 800×480 LCD.
 
 ## Status
 
-**Feasibility: settled, GO. Gates 0–2 are closed and independently verified.**
-The model has been exported, shape-frozen, quantised to int8 on real speech,
-compiled against the STM32N6 audio application's real memory geometry, and
-scored for accuracy at the window it will actually ship at. **Nothing has run on
-the board yet**; Gate 3 is the first board contact and it is gated on one
-irreversible human decision (see below).
+**Feasibility settled, GO. Gates 0–3 are closed.** The model has been exported,
+shape-frozen, quantised to int8 on real speech, compiled against the STM32N6
+audio application's real memory geometry, and scored for accuracy at the window
+it will actually ship at. **The board now runs firmware built from source on
+this machine** — the full path from compile through signing, flashing and boot
+is proven, with ST's own model in the loop. The Citrinet network has not been
+invoked on silicon yet; that is Gate 4.
 
 | gate | verdict | the number that decides it |
 |---|---|---|
 | 1 — int8 vs fp32 WER at 8 s | **PASS** | int8 costs **+0.50 points** (4.91 % → 5.41 %, n=373, 95 % CI [+0.07, +0.94]) against a ~1.0-point pass band |
 | 2 — recompile on ST's own mpool + option string | **PASS** | **0 SW / 0 hybrid epochs**, 947,200 B activations, **0 B in hyperRAM**, weights at **0x70180000** |
+| 3 — build, sign, flash and boot ST's stock app | **PASS** | our own build runs from external flash: `\| 22 \| 2.07% \| 0.88 \| 1.20 \| 0.00 \|` |
 
-Both were re-run from scratch by an adversarial verifier and reproduced exactly —
-Gate 1 with an independent harness (zero per-utterance disagreements over 1,200
-model-utterance pairs), Gate 2 bit-for-bit from a clean compile. Full report:
-[`docs/GATES-1-2.md`](docs/GATES-1-2.md).
+Gates 1 and 2 were re-run from scratch by an adversarial verifier and reproduced
+exactly — Gate 1 with an independent harness (zero per-utterance disagreements
+over 1,200 model-utterance pairs), Gate 2 bit-for-bit from a clean compile. Full
+report: [`docs/GATES-1-2.md`](docs/GATES-1-2.md). Gate 3 write-up, including the
+working build recipe and the access matrix for this board's two boot modes:
+[`board/GATE3.md`](board/GATE3.md).
 
 **The one irreversible step turned out to be already spent — checked, not
 assumed.** `fuse_vddio()` is *not* compiled out on the Makefile path
@@ -29,8 +33,14 @@ assumed.** `fuse_vddio()` is *not* compiled out on the Makefile path
 even the unmodified ST app permanently programs OTP word 124 bits 15/16 on a
 fresh board. A read-only dump of *this* board returns
 **word 124 = `0x00018000`** — both bits already set, so the program branch never
-runs and Gate 3 carries no irreversible action here. Evidence and the caveats
+runs and Gate 3 carried no irreversible action here. Evidence and the caveats
 that remain: [`board/OTP.md`](board/OTP.md).
+
+**Signing needs `-align`, and ST's Makefile omits it.** Without it the signed
+header's entry point lands in the middle of `.text`, the FSBL jumps into a
+function body, and the part dies before UART init — a perfectly silent board
+with correct-looking flash. It cost most of Gate 3 to find. The build recipe and
+a two-command pre-flash check are in [`board/GATE3.md`](board/GATE3.md).
 
 The compile result that decides the project:
 
@@ -122,9 +132,9 @@ so it has to happen in the PDM/MDF decimator. See `eval/results/gain.log`.
 
 ## Next
 
-Gates 0–2 are closed. The first board contact is **Gate 3** — build and flash the
-*unmodified* ST audio app — and its first action is a read-only OTP dump, not a
-`make`. Gates 3–7 are planned to file level in
+Gates 0–3 are closed. The next step is **Gate 4** — drop in the Citrinet network,
+feed it a host-computed feature vector, and compare on-device argmax token IDs
+against host ONNX Runtime. Remaining gates are planned to file level in
 [`firmware/WORKLIST.md`](firmware/WORKLIST.md) (6.5 developer-days; Gate 6's
 tokenizer is already built and byte-verified at 8,222 B). Gate definitions in
 [`docs/FEASIBILITY.md`](docs/FEASIBILITY.md#work-plan); what has changed since it

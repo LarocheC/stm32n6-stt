@@ -1,6 +1,19 @@
 # Gate 3 — build and flash ST's unmodified audio app
 
-**Status: built, signed and flashed. Verification blocked on a physical switch.**
+**Status: PASS.** Built from source on this machine, signed correctly, flashed,
+booted from external flash, and printing.
+
+```
+| 22      |  2.07%|  0.88|  1.20|  0.00|      <- ours, Arm GNU 13.3, -align
+| 66      |  2.11%|  0.91|  1.19|  0.00|      <- ST's prebuilt, for comparison
+```
+
+Frame counter, CPU load, three per-stage times in ms. The small timing
+difference is the compiler; the entry point on the board reads `0x340167bd`
+(ours) rather than `0x34016B19` (ST's), so this is unambiguously our binary.
+
+The toolchain is now proven end to end: **source → compile → sign → flash →
+boot → run**, with ST's own model in the loop. Gate 4 can proceed.
 
 Goal was to prove the toolchain, the boot chain and the board with ST's own
 model in the loop, before any of our code is involved.
@@ -11,7 +24,34 @@ model in the loop, before any of our code is involved.
 | 3.2 decide on `fuse_vddio()` | **moot on this board** — the fuses it would program are already programmed |
 | 3.3 `make bm` | **done** — but not with the toolchain we had pinned, see below |
 | 3.4 sign + flash FSBL, app, weights | **done** — all three regions written |
-| 3.5 confirm the UART banner | **blocked** — needs both boot switches LEFT and a power cycle |
+| 3.5 confirm the UART banner | **done** — prints, after the signing fix below |
+
+## The build recipe that works
+
+```bash
+export PATH=/home/claroche/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin:$PATH
+cd vendor/STM32N6-GettingStarted-Audio/Projects/GS
+
+# 1. build — vanilla Arm GNU needs -fcyclomatic-complexity stripped (see 3.3);
+#    ST's own CubeCLT compiler accepts it directly.
+make bm -j8 GCC_PATH=/home/claroche/opt/st/stm32cubeclt_1.21.0/GNU-tools-for-STM32/bin
+
+# 2. sign — -align is MANDATORY on CubeProgrammer 2.21+ and ST's Makefile omits it
+STM32_SigningTool_CLI -s -bin BuildGCC/BM/GS_Audio_N6.bin -nk -t ssbl -hv 2.3 \
+                      -align -o BuildGCC/BM/GS_Audio_N6_sign.bin
+
+# 3. VERIFY before flashing — costs two commands, saves a boot-switch round trip
+test "$(xxd -e -g4 -s 0x70 -l 4 BuildGCC/BM/GS_Audio_N6_sign.bin | awk '{print $2}')" \
+   = "$(arm-none-eabi-nm BuildGCC/BM/GS_Audio_N6.elf | awk '/ Reset_Handler/{print $1}' \
+        | sed 's/^0*//' | awk '{printf "%x\n", strtonum("0x"$1)+1}')" \
+  && echo "entry point OK"
+
+# 4. flash (development switch position; mode=UR, HOTPLUG does not work here)
+STM32_Programmer_CLI -c port=SWD mode=UR --extload <MX66UW1G45G_STM32N6570-DK.stldr> \
+                     -w BuildGCC/BM/GS_Audio_N6_sign.bin 0x70100000
+
+# 5. both switches LEFT, power-cycle, re-attach usbipd, read UART at 14400 8N1
+```
 
 ## 3.3 — ST's Makefile does not build with vanilla Arm GNU
 
