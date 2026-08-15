@@ -1,27 +1,53 @@
-# stm32n6-tts — an on-device speech captioner for the STM32N6570-DK
+# stm32n6-stt — an on-device speech captioner for the STM32N6570-DK
 
 Push-to-talk English speech recognition running entirely on an STM32N6570-DK:
 microphone → log-mel on the Cortex-M55 → **Citrinet-256 CTC encoder on the
 Neural-ART NPU** → greedy CTC decode → text on the 800×480 LCD.
 
-> **Naming.** The repository is called `stm32n6-tts`, but this is
-> speech-**to**-text (ASR/STT), not text-to-speech. Nothing here synthesises
-> audio. Renaming the repo to `stm32n6-stt` or `stm32n6-asr` would remove a
-> standing source of confusion.
-
 ## Status
 
-**Feasibility: settled, GO.** The model has been exported, shape-frozen,
-quantised to int8 on real speech, and compiled against the STM32N6 audio
-application's real memory geometry. Nothing has run on the board yet.
+**Feasibility: settled, GO. Gates 0–2 are closed and independently verified.**
+The model has been exported, shape-frozen, quantised to int8 on real speech,
+compiled against the STM32N6 audio application's real memory geometry, and
+scored for accuracy at the window it will actually ship at. **Nothing has run on
+the board yet**; Gate 3 is the first board contact and it is gated on one
+irreversible human decision (see below).
 
-The result that decides the project:
+| gate | verdict | the number that decides it |
+|---|---|---|
+| 1 — int8 vs fp32 WER at 8 s | **PASS** | int8 costs **+0.50 points** (4.91 % → 5.41 %, n=373, 95 % CI [+0.07, +0.94]) against a ~1.0-point pass band |
+| 2 — recompile on ST's own mpool + option string | **PASS** | **0 SW / 0 hybrid epochs**, 947,200 B activations, **0 B in hyperRAM**, weights at **0x70180000** |
+
+Both were re-run from scratch by an adversarial verifier and reproduced exactly —
+Gate 1 with an independent harness (zero per-utterance disagreements over 1,200
+model-utterance pairs), Gate 2 bit-for-bit from a clean compile. Full report:
+[`docs/GATES-1-2.md`](docs/GATES-1-2.md).
+
+**The one irreversible step turned out to be already spent — checked, not
+assumed.** `fuse_vddio()` is *not* compiled out on the Makefile path
+(`stm32n6570_discovery.h:59-61` self-defines `USE_STM32N6570_DK`), so running
+even the unmodified ST app permanently programs OTP word 124 bits 15/16 on a
+fresh board. A read-only dump of *this* board returns
+**word 124 = `0x00018000`** — both bits already set, so the program branch never
+runs and Gate 3 carries no irreversible action here. Evidence and the caveats
+that remain: [`board/OTP.md`](board/OTP.md).
+
+The compile result that decides the project:
 
 | window | T | epochs | **SW epochs** | activations | % of audio pool | weights | sched. cycles @1 GHz |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | 4 s | 400 | 626 | **0** | 306 KB | 20.8 % | 9.677 MB | 73.7 ms |
 | **8 s** | **800** | **628** | **0** | **625 KB** | **42.5 %** | **9.728 MB** | **91.2 ms** |
 | 12 s | 1200 | 628 | **0** | 1,017 KB | 69.1 % | 9.731 MB | 124.1 ms |
+
+> **These are screening numbers, and Gate 2 moved them.** The table above uses the
+> zoo's option string, which includes `--Oauto-sched`. **ST's audio application
+> ships without it.** Under ST's own options the 8 s row is **618 epochs, 925 KB,
+> 62.8 % of the pool, 91.89 ms** — still 0 SW, still 0 hybrid, still entirely
+> on-chip — and the 12 s row **spills 150 KB to PSRAM** while the epoch table
+> still reads 0 SW / 0 hybrid. Adding `--Oauto-sched` back reproduces this table
+> exactly. Note also that the pool is not fungible: npuRAM6 is at **94.87 %**
+> (~23 KB spare) while cpuRAM2 sits at 48.83 %. See [`compile/GATE2.md`](compile/GATE2.md).
 
 **Zero software epochs.** Every operator in a full ASR encoder — 503 nodes of
 exactly seven types: 282 Conv (107 of them grouped/depthwise), 130 Relu,
@@ -78,6 +104,9 @@ artifacts/  (gitignored) rescued ONNX graphs, weights, compile reports
 LibriSpeech dev-clean, ONNX Runtime, through the verified NeMo-exact frontend.
 These are **not** board measurements.
 
+- int8 vs fp32 at **8 s**, the shipped window: 4.91 % → **5.41 %** WER
+  (+0.50 points, 95 % CI [+0.07, +0.94]) on 373 utterance-disjoint utterances
+  that fit the window — `eval/results/gate1_8s.json`, [`eval/GATE1.md`](eval/GATE1.md)
 - int8 vs fp32 at 4 s: 5.60 % → **6.09 %** WER (+0.49 points) — `eval/results/int8.json`
 - window vs full spoken reference, 150 natural-length utterances:
   4 s **47.7 %**, 6 s 30.4 %, 8 s **20.0 %**, 12 s 9.0 % — truncation, not
@@ -93,8 +122,13 @@ so it has to happen in the PDM/MDF decimator. See `eval/results/gain.log`.
 
 ## Next
 
-Gates 0–2 are host-side and cost hours; the first board contact is Gate 4.
-Full sequence in [`docs/FEASIBILITY.md`](docs/FEASIBILITY.md#work-plan).
+Gates 0–2 are closed. The first board contact is **Gate 3** — build and flash the
+*unmodified* ST audio app — and its first action is a read-only OTP dump, not a
+`make`. Gates 3–7 are planned to file level in
+[`firmware/WORKLIST.md`](firmware/WORKLIST.md) (6.5 developer-days; Gate 6's
+tokenizer is already built and byte-verified at 8,222 B). Gate definitions in
+[`docs/FEASIBILITY.md`](docs/FEASIBILITY.md#work-plan); what has changed since it
+was written is in [`docs/GATES-1-2.md`](docs/GATES-1-2.md) §2.
 
 ## Related
 

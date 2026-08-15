@@ -1,0 +1,9 @@
+{
+    "Profiles": {
+		"default":
+        {
+    	    "memory_pool": "/tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/g2/st_audio.mpool",
+            "options": "--Ocache-opt -O3 --Os --native-float --Omax-ca-pipe 4 --cache-maintenance --csv-file network --all-buffers-info"
+        }
+   }
+}

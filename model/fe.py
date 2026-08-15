@@ -1,4 +1,6 @@
+import os
 import numpy as np, librosa, scipy.signal
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SR=16000; N_FFT=512; WIN=400; HOP=160; N_MELS=80
 PREEMPH=0.97; LOG_GUARD=2.0**-24; STD_EPS=1e-5
 _w = scipy.signal.get_window("hann", WIN, fftbins=False)
@@ -14,7 +16,7 @@ def norm_pf(m, seq_len=None):
     mu = v.mean(1,keepdims=True); sd = v.std(1,ddof=1,keepdims=True)+STD_EPS
     out = (m-mu)/sd; out[:,seq_len:]=0.0
     return out
-VOCAB=[l.rsplit(" ",1)[0] for l in open("/tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/citrinet/vocab.txt").read().split("\n") if l.strip()!=""]
+VOCAB=[l.rsplit(" ",1)[0] for l in open(os.path.join(_REPO,"tokenizer","vocab.txt"),encoding="utf-8").read().split("\n") if l.strip()!=""]
 def greedy(logits_TxV, blank=1024):
     out=[]; prev=-1
     for i in logits_TxV.argmax(-1):

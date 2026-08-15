@@ -65,8 +65,20 @@ cal=[cal[i] for i in rng.permutation(len(cal))[300:364]]   # disjoint from eval
                                                            # check overlap later)
 ```
 
-**The calibration/evaluation disjointness was never actually verified.** The
-calibration set is drawn with seed 7 and the evaluation sets with different
-seeds, so overlap is unlikely but unproven. Verify it explicitly at Gate 1
-before quoting any int8 WER number — calibrating and evaluating on the same
-utterances is exactly the kind of thing that makes a quantisation look free.
+**Checked at Gate 1 — and the comment is wrong.** `eval/check_disjoint.py`
+reconstructs all three calibration sets and all eight evaluation sets and
+intersects them by utterance key. "perm seed differs" was not a valid argument:
+`run_int8.py` draws from the *same* `d <= 3.5` pool with seed 0, and **11 of its
+120 draws land in `cal_400`**. Six evaluation sets overlap `cal_400`; two
+overlap `cal_1200`.
+
+No published number is contaminated, for two separate reasons: `run_int8.py`
+removes the overlap at runtime before scoring (its 109 held-out utterances carry
+exactly the 804 reference words in `results/int8.json`), and every other
+overlapping script evaluates the fp32 `model.onnx`, which calibration cannot
+touch. **`cal_800` — the calibration set of the shipped 8 s model, built by
+`q800.py`, not by this script — overlaps nothing at all.**
+
+Note also that `quant_real.py` builds the **4 s** model. The 8 s and 12 s graphs
+use `q800.py` / `q1200.py`, whose calibration sets use different duration
+filters and a different slice. See `eval/GATE1.md` §1.

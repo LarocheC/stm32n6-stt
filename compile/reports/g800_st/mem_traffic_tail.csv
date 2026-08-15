@@ -1,0 +1,26 @@
+epochs,octoFlash (r),octoFlash (w),octoFlash (r+w),octoFlash (r cycles),octoFlash (w cycles),octoFlash (cycles),hyperRAM (r),hyperRAM (w),hyperRAM (r+w),hyperRAM (r cycles),hyperRAM (w cycles),hyperRAM (cycles),npuRAM6 (r),npuRAM6 (w),npuRAM6 (r+w),npuRAM6 (r cycles),npuRAM6 (w cycles),npuRAM6 (cycles),cpuRAM2 (r),cpuRAM2 (w),cpuRAM2 (r+w),cpuRAM2 (r cycles),cpuRAM2 (w cycles),cpuRAM2 (cycles),flexMEM (r),flexMEM (w),flexMEM (r+w),flexMEM (r cycles),flexMEM (w cycles),flexMEM (cycles),cpuRAM1 (r),cpuRAM1 (w),cpuRAM1 (r+w),cpuRAM1 (r cycles),cpuRAM1 (w cycles),cpuRAM1 (cycles),bus port 1 (r),bus port 1 (w),bus port 0 (r),bus port 0 (w),epoch OPS,epoch OPS vs total %,epoch compute (cyles),epoch compute (cyles) vs Tot %,max (cycles),max (cycles) vs Tot %,epoch average ATON power (mW),epoch average ATON power vs Tot %,epoch average memory power (mW),epoch average memory power vs Tot %
+618 ,0,0,0,0,0,0,0,0,0,0,0,0,64000,64000,128000,10000,80000,90000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,64000,0,0,64000,0,0,0,0,80000,0.000870576,0,0.00057738,0,0.000171546
+619 ,660100,0,660100,1324296,0,1324296,0,0,0,0,0,0,13530000,615000,14145000,760919,65663,826582,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,7626000,0,6970000,205000,131404992,0.0299065,1093334,0.028087,3960600,0.0431,55.7558,0.0366795,195.106,0.0657286
+620 ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+
+Total,9921732,0,9921732,22131672,0,22131672,0,0,0,0,0,0,179471248,43201128,222672376,20721644,14389745,35111389,7884800,768000,8652800,1453764,976000,2429764,0,0,0,0,0,0,0,0,0,0,0,0,
+BW,1.0797e+08,0,1.0797e+08,2.40841e+08,0,2.40841e+08,0,0,0,0,0,0,1.95304e+09,4.70123e+08,2.42316e+09,2.25497e+08,1.56592e+08,3.82089e+08,8.58039e+07,8.35753e+06,9.41615e+07,1.58201e+07,1.0621e+07,2.64412e+07,0,0,0,0,0,0,0,0,0,0,0,0,
+
+octoFlash , 9.73 MB , total bytes r/w BW,1.0797e+08
+hyperRAM , ?
+npuRAM6 , 425.00 KB , total bytes r/w BW,2.42316e+09
+cpuRAM2 , 500.00 KB , total bytes r/w BW,9.41615e+07
+flexMEM , ?
+cpuRAM1 , ?
+
+Total cycles,91893224
+Total ideal cycles,38926712
+Total OPS,4393867264
+Total ops/cycle,47
+Total ideal ops/cycle,112
+Frames/sec(1000 MHz),10.8822
+Ideal Frames/sec(1000 MHz),25.6893
+Average ATON power mW(1000 MHz),18.0857
+Average memory power mW,35.3171
+Average Total power mW,53.4028
+TOPS/W,0.880103

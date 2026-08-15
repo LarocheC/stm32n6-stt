@@ -5,10 +5,22 @@ arbitrary graph run on this part — live in `stm32n6-deployment-zoo`.)
 
 All results in `results/` are **host** measurements: LibriSpeech dev-clean,
 ONNX Runtime, degradations applied in simulation. Nothing here touched the board.
-Scripts carry hardcoded scratchpad paths and need retargeting before rerunning.
+
+`results/recs.json` now points at `corpus/LibriSpeech/dev-clean` (all 2,703
+files verified present). Its record **order is load-bearing** — every selection
+below is an RNG permutation of indices into a filtered slice of that list, so
+sorting or regenerating it silently changes every set. The Gate 1 scripts are
+retargeted and runnable; the older `run_*.py` still carry scratchpad paths and
+need retargeting before rerunning.
+
+**Start here: [`GATE1.md`](GATE1.md)** — fp32 vs int8 WER at the shipped 8 s
+window, and the calibration/evaluation disjointness audit.
 
 | script | question | result |
 |---|---|---|
+| `sets.py` | canonical reconstruction of every calibration and evaluation set | — |
+| `check_disjoint.py` | is the calibration set disjoint from the eval sets? | `results/disjoint.json`, `GATE1.md` §1 |
+| `run_gate1_8s.py` | fp32 vs int8 WER at T=800, held-out | `results/gate1_8s.json`, `GATE1.md` §2 |
 | `run_8s.py` | WER at a given window against the full spoken reference | window table, `docs/FEASIBILITY.md` §2(a) |
 | `run_int8.py` | what does int8 quantisation cost | `results/int8.json` |
 | `run_occ.py` / `run_occ12.py` | does padding a short utterance to a long window hurt | `results/occ.log`, `occ12.log` |

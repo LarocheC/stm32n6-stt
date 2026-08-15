@@ -1,0 +1,30 @@
+      -------------------------------------------------------------------
+                        STM32CubeProgrammer v2.22.0                  
+      -------------------------------------------------------------------
+ST-LINK SN  : 003D00443234510E37333934
+ST-LINK FW  : V3J17M11
+Board       : STM32N6570-DK
+Voltage     : 3.29V
+SWD freq    : 8000 KHz
+Connect mode: Hot Plug
+Reset mode  : Software reset
+Device ID   : 0x486
+Revision ID : Rev B
+Device name : ST32N657
+Device type : MCU
+Device CPU  : Cortex-M55
+BL Version  : --
+UPLOADING OTP STRUCTURE ...
+  Address     : 0xF2F2F2F2
+  Size          : 4096 Bytes
+Uploading OTP data:
+[==================================================] 100% 
+OTP Partition read successfully
+OTP DATA WORDS : 
+    120     |     0x343FA68E  |  0x40000000
+    121     |     0x01057877  |  0x40000000
+    122     |     0x92E0077C  |  0x40000000
+    123     |     0x97077777  |  0x40000000
+    124     |     0x00018000  |  0x00000000
+    125     |     0x00000000  |  0x40000000
+    126     |     0x00000000  |  0x40000000

@@ -1,0 +1,38 @@
+Compilation details
+------------------------------------------------------------------------------------
+Compiler version: 1.1.3-275
+Compiler arguments:  -i /tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/g2/out_1200/q1200_real_OE_3_3_1.onnx --json-quant-file /tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/g2/out_1200/q1200_real_OE_3_3_1_Q.json -g network.c --load-mdesc /home/claroche/stedgeai/install/4.0/Utilities/configs/stm32n6.mdesc --load-mpool /tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/g2/st_audio.mpool --load-cdesc /home/claroche/stedgeai/install/4.0/Utilities/configs/cortex-m55.cdesc --save-mpool-file /tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/g2/ws_1200/neural_art__network/st_audio.mpool --out-dir-prefix /tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/g2/ws_1200/neural_art__network/ --network-name network --Ocache-opt -O3 --Os --native-float --Omax-ca-pipe 4 --cache-maintenance --csv-file network --all-buffers-info --output-info-file c_info.json --generate-stai
+====================================================================================
+
+Memory usage information  (input/output buffers are included in activations)
+------------------------------------------------------------------------------------
+	flexMEM    [0x34000000 - 0x34000000]:          0  B /          0  B  (  0.00 % used) -- weights:          0  B (  0.00 % used)  activations:          0  B (  0.00 % used)
+	cpuRAM1    [0x34000000 - 0x34000000]:          0  B /          0  B  (  0.00 % used) -- weights:          0  B (  0.00 % used)  activations:          0  B (  0.00 % used)
+	cpuRAM2    [0x34100000 - 0x34200000]:    900.000 kB /      1.000 MB  ( 87.89 % used) -- weights:          0  B (  0.00 % used)  activations:    900.000 kB ( 87.89 % used)
+	npuRAM6    [0x34350000 - 0x343C0000]:    412.500 kB /    448.000 kB  ( 92.08 % used) -- weights:          0  B (  0.00 % used)  activations:    412.500 kB ( 92.08 % used)
+	octoFlash  [0x70180000 - 0x74080000]:      9.731 MB /     63.000 MB  ( 15.45 % used) -- weights:      9.731 MB ( 15.45 % used)  activations:          0  B (  0.00 % used)
+	hyperRAM   [0x90000000 - 0x91000000]:    150.000 kB /     16.000 MB  (  0.92 % used) -- weights:          0  B (  0.00 % used)  activations:    150.000 kB (  0.92 % used)
+---
+Total:                                            11.160 MB                                  -- weights:      9.731 MB                  activations:      1.428 MB                   
+====================================================================================
+
+
+Used memory ranges
+------------------------------------------------------------------------------------
+	cpuRAM2    [0x34100000 - 0x34200000]: 0x34100000-0x341E1000
+	npuRAM6    [0x34350000 - 0x343C0000]: 0x34350000-0x343B7200
+	octoFlash  [0x70180000 - 0x74080000]: 0x70180000-0x70B3B3F0
+	hyperRAM   [0x90000000 - 0x91000000]: 0x90000000-0x90025800
+====================================================================================
+
+Epochs details
+------------------------------------------------------------------------------------
+Total number of epochs                               618
+>> pure software (SW) epochs                           0
+>> hybrid epochs (using both software and hardware)    0
+>> pure hardware (HW or EC) epochs                   618  (implemented in 0 epoch controller blobs/meta epochs)
+---
++-----------+------+---------+
+
+### hyperRAM traffic summed over all epoch rows of network.csv (ST option set):
+###   r=153600 B  w=153600 B  r+w=307200 B  cycles=1152000

@@ -1,0 +1,96 @@
+
+/********************************** INPUTS ***********************************/
+#define STAI_NETWORK_IN_NUM (1)
+#define STAI_NETWORK_IN_ALIGNMENTS \
+  { \
+    32 \
+  }
+#define STAI_NETWORK_IN_NAMES \
+  { \
+    "Input_0_out_0" \
+  }
+#define STAI_NETWORK_IN_FORMATS \
+  { \
+    STAI_FORMAT_S8 \
+  }
+#define STAI_NETWORK_IN_SIZES \
+  { \
+    64000 \
+  }
+#define STAI_NETWORK_IN_SIZES_BYTES \
+  { \
+    64000 \
+  }
+
+#define STAI_NETWORK_IN_1_ALIGNMENT (32)
+#define STAI_NETWORK_IN_1_NAME "Input_0_out_0"
+#define STAI_NETWORK_IN_1_FLAGS (STAI_FLAG_PREALLOCATED|STAI_FLAG_CHANNEL_FIRST)
+#define STAI_NETWORK_IN_1_FORMAT (STAI_FORMAT_S8)
+#define STAI_NETWORK_IN_1_SIZE (64000)
+#define STAI_NETWORK_IN_1_SIZE_BYTES (64000)
+#define STAI_NETWORK_IN_1_CHANNEL (1)
+#define STAI_NETWORK_IN_1_HEIGHT (80)
+#define STAI_NETWORK_IN_1_WIDTH (800)
+#define STAI_NETWORK_IN_1_BATCH (1)
+#define STAI_NETWORK_IN_1_RANK (3)
+#define STAI_NETWORK_IN_1_SHAPE \
+  { \
+    80, 800, 1 \
+  }
+#define STAI_NETWORK_IN_1_SCALE_OFFSET_NUM (1)
+#define STAI_NETWORK_IN_1_SCALES \
+  { \
+    0.120522417128086 \
+  }
+#define STAI_NETWORK_IN_1_OFFSETS \
+  { \
+    0 \
+  }
+
+/********************************** OUTPUTS **********************************/
+#define STAI_NETWORK_OUT_NUM (1)
+#define STAI_NETWORK_OUT_ALIGNMENTS \
+  { \
+    32 \
+  }
+#define STAI_NETWORK_OUT_NAMES \
+  { \
+    "Transpose_1488_out_0" \
+  }
+#define STAI_NETWORK_OUT_FORMATS \
+  { \
+    STAI_FORMAT_S8 \
+  }
+#define STAI_NETWORK_OUT_SIZES \
+  { \
+    102500 \
+  }
+#define STAI_NETWORK_OUT_SIZES_BYTES \
+  { \
+    102500 \
+  }
+
+#define STAI_NETWORK_OUT_1_ALIGNMENT (32)
+#define STAI_NETWORK_OUT_1_NAME "Transpose_1488_out_0"
+#define STAI_NETWORK_OUT_1_FLAGS (STAI_FLAG_PREALLOCATED|STAI_FLAG_OVERRIDE|STAI_FLAG_CHANNEL_FIRST)
+#define STAI_NETWORK_OUT_1_FORMAT (STAI_FORMAT_S8)
+#define STAI_NETWORK_OUT_1_SIZE (102500)
+#define STAI_NETWORK_OUT_1_SIZE_BYTES (102500)
+#define STAI_NETWORK_OUT_1_CHANNEL (1)
+#define STAI_NETWORK_OUT_1_HEIGHT (100)
+#define STAI_NETWORK_OUT_1_WIDTH (1025)
+#define STAI_NETWORK_OUT_1_BATCH (1)
+#define STAI_NETWORK_OUT_1_RANK (3)
+#define STAI_NETWORK_OUT_1_SHAPE \
+  { \
+    100, 1025, 1 \
+  }
+#define STAI_NETWORK_OUT_1_SCALE_OFFSET_NUM (1)
+#define STAI_NETWORK_OUT_1_SCALES \
+  { \
+    0.265415638685226 \
+  }
+#define STAI_NETWORK_OUT_1_OFFSETS \
+  { \
+    0 \
+  }
