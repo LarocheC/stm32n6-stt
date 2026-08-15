@@ -1,0 +1,9 @@
+{
+    "Profiles": {
+		"default":
+        {
+    	    "memory_pool": "<repo>/compile/st_audio.mpool",
+            "options": "--Ocache-opt -O3 --Os --native-float --Omax-ca-pipe 4 --cache-maintenance --csv-file network --all-buffers-info --Oauto-sched"
+        }
+   }
+}
