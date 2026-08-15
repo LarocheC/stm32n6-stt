@@ -219,9 +219,27 @@ utterance (`firmware/test/results/fe_parity.json` → `guard_cases`):
 
 | condition | input peak | guard occupancy | `citrinet_fe_run()` | log-mel range |
 |---|---:|---:|---|---|
-| native | 0.4088 | 7.61 % | `OK` | [−16.64, 0.04] |
-| −54 dBFS, no gain | 0.0008 | **96.00 %** | **`E_GUARD`, refuses** | [−16.64, −12.37] |
-| −54 dBFS, peak-normalised to 0.9 | 0.9000 | 3.62 % | `OK` | [−16.64, 1.68] |
+| native | 0.4088 | 4.13 % | `OK` | [−16.64, 0.04] |
+| −54 dBFS, no gain | 0.0008 | **95.85 %** | **`E_GUARD`, refuses** | [−16.64, −12.37] |
+| −54 dBFS, peak-normalised to 0.9 | 0.9000 | 0.00 % | `OK` | [−16.64, 1.68] |
+
+**One utterance does not set a threshold.** Over 80 dev-clean utterances that
+fill the 8 s window at correct gain, occupancy is: median **4.5 %**, p90 14.7 %,
+p95 22.4 %, **max 33.1 %**. The failure mode this exists to catch sits at
+**91–97 %**. The gap between 33 % and 91 % is where the threshold belongs, which
+is why it is **0.50** and not the 0.20 first chosen — 0.20 sits inside the speech
+distribution and refused 5 of those 80 utterances despite each transcribing
+essentially perfectly. A guard that rejects good audio is worse than no guard,
+because it teaches you to ignore it.
+
+**Occupancy is computed over non-silent bins only.** `citrinet_fe_run()`
+zero-fills the tail of a capture shorter than the window, and every mel energy
+over that pad is identically zero — below the guard by construction, and carrying
+no information about gain staging. Counting it made the statistic a function of
+utterance length: 30 of 60 arbitrary dev-clean utterances were refused, and a
+2.77 s utterance reported 77.4 % of which 65.1 points were pure padding.
+`citrinet_fe_guard_fraction()` subtracts the exact-zero count from both numerator
+and denominator.
 
 −54 dBFS is where `eval/results/gain.log` says ordinary desk speech lands on this
 board's IMP34DT05, and where WER goes 5.83 % → 35.28 % while every log reports a
@@ -240,7 +258,7 @@ acquisition callbacks (`WORKLIST §5.8`); this hook is a safety net.
 
 The refusal is deliberately hard to skip: `citrinet_fe_run()` returns
 `CITRINET_FE_E_GUARD` (−4) when occupancy exceeds `CITRINET_FE_GUARD_MAX_FRAC`
-(0.20), having still filled the output buffer. A caller that only tests
+(0.50), having still filled the output buffer. A caller that only tests
 `!= CITRINET_FE_OK` refuses by default. `citrinet_fe_features_usable()` is the
 explicit predicate; `citrinet_fe_report()` formats a one-line level banner with
 integer-only `snprintf`, because newlib-nano drops `%f` unless the link line
@@ -400,7 +418,7 @@ Three ways out, in order of how well they are established:
 5. **Guard occupancy on live speech.** §5 measures it on LibriSpeech played
    through the deployment window: 7.6 % at native level, 96 % at −54 dBFS. What
    the DK's own microphone delivers into `citrinet_fe_run()` is exactly the number
-   the 20 % threshold exists to expose, and it is unknown.
+   the 50 % threshold exists to expose, and it is unknown.
 
 ---
 

@@ -389,7 +389,24 @@ int citrinet_fe_run(citrinet_fe_t *fe, const int16_t *pcm, uint32_t n_samples,
 float citrinet_fe_guard_fraction(const citrinet_fe_t *fe)
 {
     if (fe == NULL || fe->guard_total == 0u) return 0.0f;
-    return (float)fe->guard_below / (float)fe->guard_total;
+
+    /* Exclude bins whose energy is *exactly* zero.  citrinet_fe_run() zero-fills
+     * the tail of a capture shorter than the 8 s window, and every mel energy over
+     * that pad is identically 0 -- below the guard by construction, but carrying no
+     * information about gain staging.  Counting it made the statistic a function of
+     * utterance length: 30 of 60 arbitrary dev-clean utterances were refused, and a
+     * 2.77 s utterance reported 77.4 % occupancy of which 65.1 points were pure pad.
+     *
+     * The quantity we actually want is "of the bins that carry signal, how many
+     * collapsed onto the log floor". */
+    uint32_t below = fe->guard_below;
+    uint32_t total = fe->guard_total;
+    if (fe->guard_zero <= below && fe->guard_zero < total) {
+        below -= fe->guard_zero;
+        total -= fe->guard_zero;
+    }
+    if (total == 0u) return 0.0f;
+    return (float)below / (float)total;
 }
 
 int citrinet_fe_features_usable(const citrinet_fe_t *fe)

@@ -61,12 +61,21 @@ extern "C" {
 #define CITRINET_FE_PREEMPH     0.97f
 #define CITRINET_FE_I16_SCALE   (1.0f / 32768.0f)
 
-/* Refuse to invoke the model when more than this fraction of the 64,000 mel
+/* Refuse to invoke the model when more than this fraction of the *spoken* mel
  * energies landed below the log guard.  eval/results/gain.log: at -54 dBFS,
  * 97.9 % of bins are below the guard and WER goes 5.83 % -> 35.28 % while every
- * log still reports a clean NPU run.  Anything above ~20 % is a gain-staging
- * fault, not speech. */
-#define CITRINET_FE_GUARD_MAX_FRAC  0.20f
+ * log still reports a clean NPU run.
+ *
+ * The threshold is 0.50, derived from a measured distribution rather than
+ * guessed.  Over 80 dev-clean utterances that fill the 8 s window at correct
+ * gain: median 4.5 %, p90 14.7 %, p95 22.4 %, **max 33.1 %**.  The failure mode
+ * this exists to catch sits at 91-97 %.  An earlier value of 0.20 was inside the
+ * speech distribution and refused 5 of those 80 utterances even though they
+ * transcribed essentially perfectly -- a threshold that rejects good audio is
+ * worse than none, because it trains you to ignore it.
+ *
+ * Note this is evaluated over non-silent bins only; see citrinet_fe_guard_fraction(). */
+#define CITRINET_FE_GUARD_MAX_FRAC  0.50f
 
 /* --------------------------------------------------------------- scratch type */
 /* The pass-1 log-mel matrix.  float32 by default.  Values live in roughly
