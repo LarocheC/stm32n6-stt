@@ -134,6 +134,55 @@ now flashed over all three regions. If it prints, our build is at fault. If it
 stays silent, the fault is in the board or the boot chain, and nothing about our
 model is implicated either way.
 
+## RESULT: ST's prebuilt runs. Our build does not.
+
+ST's `STM32N6_GettingStarted_Audio_aed_bm.hex`, flashed over all three regions
+and booted from flash, prints continuously:
+
+```
+| 66      |  2.11%|  0.91|  1.19|  0.00|
+| 67      |  2.11%|  0.91|  1.19|  0.00|
+```
+
+A frame counter, CPU load, and three per-stage times in milliseconds. The board,
+the boot chain, the external loader, the signing chain and the flash procedure
+are **all proven good**. Gate 3 has done its job: the fault is in our build, and
+it was found with ST's own model in the loop, before a line of our code existed
+to be blamed.
+
+Note also what this says about the memory map — 2.11 % CPU and ~2.1 ms of work
+per frame is ST's Yamnet-1024 AED model, not ours. It is a reference point, not
+a target.
+
+### The remaining variable is the compiler
+
+| build | compiler | `.bin` size | runs? |
+|---|---|---:|---|
+| ours | GNU Tools for STM32 **14.3**.rel1 (CubeCLT) | 242,272 B | **no** |
+| ours | Arm GNU **13.3**.Rel1, via a shim stripping `-fcyclomatic-complexity` | 243,616 B | untested |
+| ST's prebuilt | unknown; ST support STM32CubeIDE v2.10.0 | 244,544 B | **yes** |
+
+ST document STM32CubeIDE v2.10.0 as the supported toolchain (`README.md:88`).
+Its bundled "GNU Tools for STM32" is a third lineage — neither the CubeCLT 14.3
+we used nor vanilla Arm GNU 13.3. Only one GNU-Tools-for-STM32 is installed on
+this machine.
+
+### Next step is a debugger, not another compiler
+
+Swapping toolchains and reflashing costs a boot-switch round trip per attempt and
+answers only "did that one work". A debugger answers *where it stops*.
+
+The application links with `STM32N657XX_LRUN.ld` — load-and-run — so it can be
+loaded into RAM and started over SWD in development mode, which is how the zoo's
+`n6_loader.py` drives this board. That allows iteration with no further switch
+flips. `ST-LINK_gdbserver` is at
+`/home/claroche/opt/st/stm32cubeclt_1.21.0/STLink-gdb-server/bin/`.
+
+Plan: break on `SystemClock_Config_Full`, `MPU_Config`, `Ext_Mem_Config`,
+`NPU_Config`, `IAC_Config` and `UART_Config` in order, and find the first that
+does not return. `Ext_Mem_Config()` is the prior favourite, since it reconfigures
+the xSPI interface the code is running from.
+
 ## Bench procedure: `mode=UR`, not `mode=HOTPLUG`
 
 Once the board has been in boot-from-flash mode, `mode=HOTPLUG` fails with
