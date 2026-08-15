@@ -103,7 +103,56 @@ microphone — it classifies events like `crying_baby`, `clock_tick`, `sneezing`
 and ours does not, the problem is our build; if neither prints, it is the boot
 chain or the switches.
 
-### Switching back
+## 3.5 diagnosis — what has been eliminated
+
+After the switches went LEFT and the board was power-cycled, it printed nothing.
+A reset-button press produced nothing either, so the app is not merely quiet
+between events — it is not reaching `UART_Config()`.
+
+**That is consistent with a hang anywhere in early init.** `UART_Config()` is
+`audio_bm.c:122`, *after* `SystemClock_Config_Full` (101), `MPU_Config` (111),
+`Ext_Mem_Config` (113), `NPU_Config` (114) and `IAC_Config` (115). Any of those
+hanging is byte-identical, from outside, to a dead board — and `Ext_Mem_Config()`
+reconfigures the very xSPI interface the app is executing from.
+
+Eliminated, each by measurement rather than reasoning:
+
+| suspect | how it was eliminated |
+|---|---|
+| wrong boot mode | SWD refuses the target in flash-boot mode and accepts it in dev mode — the switch flip demonstrably took |
+| wrong baud | 14400 confirmed in *both* `#ifdef` branches (`app_config.h:57-61`); swept 9600–921600, nothing at any rate |
+| wrong flash layout | parsed ST's prebuilt combined hex: `0x70000000` +62,752 B, `0x70100000` +244,544 B, `0x70180000` +3,282,785 B — exactly the three regions written |
+| wrong use case | `network.c`, `stai_network.c`, `ai_model_config.h`, `user_mel_tables.c` all md5-match their `.aed` variants, so firmware and weights agree |
+| **writes never committed** | **read back from the board: `0x70000000` and `0x70100000` both begin `53544d32` (`STM3`), and the app header byte-matches our signed binary.** The flash is correctly programmed |
+
+What remains is the firmware itself: we built with ST's GCC 14.3 (the only
+compiler on this machine that accepts `-fcyclomatic-complexity`), and ST's
+prebuilt binary was built with something else.
+
+**Next experiment:** ST's prebuilt `STM32N6_GettingStarted_Audio_aed_bm.hex` is
+now flashed over all three regions. If it prints, our build is at fault. If it
+stays silent, the fault is in the board or the boot chain, and nothing about our
+model is implicated either way.
+
+## Bench procedure: `mode=UR`, not `mode=HOTPLUG`
+
+Once the board has been in boot-from-flash mode, `mode=HOTPLUG` fails with
+`Unable to get core ID` / `No STM32 target found` **even after the switches are
+returned to development position** — because the boot configuration is latched
+at reset, and flipping a switch under power changes nothing until the next one.
+
+`mode=UR` (connect under reset) asserts NRST and catches the part early:
+
+```
+STM32_Programmer_CLI -c port=SWD mode=UR --extload <MX66UW1G45G_STM32N6570-DK.stldr> ...
+```
+
+This is worth knowing for the zoo too, whose loader path assumes HOTPLUG. The
+symptom looks exactly like the catalogue's wedged-probe entry — which calls for
+a physical replug — but is a different fault with a software fix, and reaching
+for the replug first would have wasted the trip.
+
+## Switching back
 
 `zoo measure` and `n6_loader.py` need development mode. Both switches go back
 **right** for that. The two workflows want opposite switch positions, which is a
