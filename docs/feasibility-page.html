@@ -247,7 +247,8 @@
           <tr><td>0 &mdash; freeze the artifact set</td><td><span class="z">CLOSED</span></td><td style="text-align:left">under version control</td></tr>
           <tr class="hi"><td>1 &mdash; int8 vs fp32 WER at 8 s</td><td><span class="z">PASS</span></td><td style="text-align:left">int8 costs <b>+0.50 points</b> (4.91% &rarr; 5.41%, n=373, 95% CI [+0.07, +0.94]) against a ~1.0-point band</td></tr>
           <tr class="hi"><td>2 &mdash; recompile on ST's own memory map</td><td><span class="z">PASS</span></td><td style="text-align:left"><b>0 SW / 0 hybrid</b>, 947,200 B activations, <b>0 B in hyperRAM</b>, weights at <b>0x70180000</b></td></tr>
-          <tr><td>3 &mdash; flash ST's unmodified app</td><td>ready</td><td style="text-align:left">the irreversible step turned out already spent &mdash; see below</td></tr>
+          <tr class="hi"><td>3 &mdash; build, sign, flash, boot</td><td><span class="z">PASS</span></td><td style="text-align:left">our own build runs from external flash: <b>| 22 | 2.07% | 0.88 | 1.20 | 0.00 |</b></td></tr>
+          <tr><td>4 &mdash; Citrinet on silicon</td><td>next</td><td style="text-align:left">canned feature vector; on-device argmax vs host ONNX Runtime</td></tr>
         </tbody>
       </table>
     </div>
@@ -264,10 +265,37 @@
       <p style="margin-top:12px">
         A read-only dump of <em class="q">this</em> board returns
         <strong>word 124 = 0x00018000</strong> &mdash; both bits already set, so
-        the program branch never runs and gate 3 carries no irreversible action
+        the program branch never runs and gate 3 carried no irreversible action
         here. Consistent with its history: the measurement harness has been
         streaming weights from external flash for months, which does not work
         without exactly that fuse.
+      </p>
+    </div>
+
+    <div class="callout">
+      <span class="eyebrow">what gate 3 actually cost, and why it was worth it</span>
+      <p>
+        The board stayed <em class="q">completely silent</em> through several
+        build-and-boot cycles. Not a crash, not a garbled banner &mdash; zero
+        bytes, with flash contents that read back byte-perfect. Suspicion fell on
+        the compiler and two toolchains were tried. Both were innocent.
+      </p>
+      <p style="margin-top:12px">
+        The signing step omits <code>-align</code>, which STM32CubeProgrammer
+        2.21+ requires. Without it the signed header's entry point is computed
+        wrong &mdash; <code>0x34002F79</code> instead of <code>0x340167BD</code>
+        &mdash; so the bootloader jumps into the <em class="q">middle of a
+        function</em> and the part dies before UART initialises. Under a debugger
+        that loads the ELF directly, the same firmware runs every init function
+        perfectly, which is why it never reproduced off-board.
+      </p>
+      <p style="margin-top:12px">
+        The deployment zoo's own toolchain notes already recorded that
+        <code>-align</code> became mandatory in 2.21. The knowledge was on disk;
+        it was simply never connected to a symptom that presents as a dead board.
+        <strong>This is exactly the failure Gate 3 exists to absorb</strong> —
+        with ST's own model in the loop, before a mel frontend and a CTC decoder
+        existed to be blamed for a silent board.
       </p>
     </div>
   </section>
@@ -485,8 +513,9 @@
       <div class="gate board">
         <span class="n">03</span>
         <div>
-          <h4>Build and flash the unmodified ST audio app <span class="tag hw">board</span></h4>
+          <h4>Build and flash the unmodified ST audio app <span class="tag hw">passed</span></h4>
           <p>Prove the toolchain path with ST's own known-good binary before putting a model in the loop. Read the OTP fuse state first &mdash; blowing them is permanent.</p>
+          <p><b>Done, and it earned its place.</b> Both boot fuses were already set, so nothing irreversible happened. But the signing step silently produced an unbootable image for want of one flag, and finding that took a debugger, two compilers and a byte-level header diff. Every hour of it was an hour not spent at gate 5 wondering whether a garbled transcript was the frontend, the quantisation, or this.</p>
         </div>
       </div>
       <div class="gate board">
