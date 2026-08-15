@@ -1,0 +1,508 @@
+<title>Citrinet on Neural-ART</title>
+<style>
+  /* ---- tokens: light is the base, both dark paths redefine only these ---- */
+  :root {
+    --bg:#F1F3F2; --surface:#FFFFFF; --surface-2:#E9EDEB;
+    --ink:#131F1E; --ink-2:#4B5B59; --ink-3:#7C8A88;
+    --rule:#D5DCDA; --rule-strong:#B6C1BF;
+    --accent:#0B7F78; --accent-soft:#D8EBE9; --accent-ink:#065F59;
+    --warn:#AC432A; --warn-soft:#F6DFD8;
+    --good:#2C7A4D; --good-soft:#D9EDE1;
+    --shadow:0 1px 2px rgba(19,31,30,.06), 0 8px 24px -16px rgba(19,31,30,.22);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#0F1716; --surface:#151F1E; --surface-2:#1C2827;
+      --ink:#E7EDEB; --ink-2:#9FB1AE; --ink-3:#6D807D;
+      --rule:#26332F; --rule-strong:#384844;
+      --accent:#40CFC2; --accent-soft:#10322F; --accent-ink:#7FE3D9;
+      --warn:#E9765C; --warn-soft:#35201B;
+      --good:#5FCB8C; --good-soft:#16301F;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#0F1716; --surface:#151F1E; --surface-2:#1C2827;
+    --ink:#E7EDEB; --ink-2:#9FB1AE; --ink-3:#6D807D;
+    --rule:#26332F; --rule-strong:#384844;
+    --accent:#40CFC2; --accent-soft:#10322F; --accent-ink:#7FE3D9;
+    --warn:#E9765C; --warn-soft:#35201B;
+    --good:#5FCB8C; --good-soft:#16301F;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.62;
+    margin: 0;
+    padding: 0 24px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  .col  { max-width: 68ch; }
+
+  /* ---- mono is the display face: apt for a compiler-report subject ---- */
+  h1, h2, h3, .mono, th, .num, .eyebrow, .tag, code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  .eyebrow {
+    font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-3); font-weight: 600;
+  }
+
+  /* ---------------- masthead ---------------- */
+  header.mast {
+    border-bottom: 1px solid var(--rule);
+    padding: 64px 0 32px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  h1 {
+    font-size: clamp(30px, 4.6vw, 50px);
+    line-height: 1.06; letter-spacing: -.025em; font-weight: 600;
+    margin: 0; text-wrap: balance;
+  }
+  h1 .dim { color: var(--ink-3); font-weight: 400; }
+  .standfirst { color: var(--ink-2); font-size: 19px; margin: 0; max-width: 62ch; text-wrap: pretty; }
+
+  .verdict {
+    display: inline-flex; align-items: baseline; gap: 14px;
+    background: var(--good-soft); color: var(--good);
+    border: 1px solid color-mix(in srgb, var(--good) 35%, transparent);
+    padding: 9px 16px; border-radius: 3px; align-self: flex-start;
+  }
+  .verdict b { font-family: inherit; font-size: 13px; letter-spacing: .18em; font-weight: 700; }
+  .verdict span { font-size: 13px; color: var(--ink-2); letter-spacing: .02em; }
+
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 8px 28px;
+    font-size: 12px; color: var(--ink-3); letter-spacing: .04em;
+  }
+
+  /* ---------------- sections ---------------- */
+  section { padding-top: 56px; }
+  h2 {
+    font-size: 13px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--accent-ink); font-weight: 700; margin: 0 0 20px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--rule);
+  }
+  h3 {
+    font-size: 17px; letter-spacing: -.01em; font-weight: 600;
+    margin: 34px 0 10px; color: var(--ink);
+  }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  strong { font-weight: 700; }
+  em.q { font-style: normal; color: var(--ink-2); }
+
+  code {
+    font-size: .86em; background: var(--surface-2);
+    padding: .12em .4em; border-radius: 3px; color: var(--ink);
+  }
+
+  /* ---------------- data tables ---------------- */
+  .scroll { overflow-x: auto; margin: 24px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th {
+    text-align: right; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--ink-3); font-weight: 600; padding: 0 14px 9px; white-space: nowrap;
+    border-bottom: 1px solid var(--rule-strong);
+  }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; }
+  th:last-child, td:last-child { padding-right: 0; }
+  td {
+    padding: 11px 14px; text-align: right; border-bottom: 1px solid var(--rule);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px;
+  }
+  tr.hi td { background: var(--accent-soft); }
+  tr.hi td:first-child { font-weight: 700; }
+  td .z { color: var(--accent); font-weight: 700; }
+  td .bad { color: var(--warn); font-weight: 700; }
+  caption {
+    caption-side: bottom; text-align: left; font-size: 12px; color: var(--ink-3);
+    padding-top: 12px; font-family: ui-monospace, Menlo, monospace;
+  }
+
+  /* ---------------- pool occupancy meters ---------------- */
+  .pools { display: grid; gap: 14px; margin: 26px 0 8px; }
+  .pool { display: grid; grid-template-columns: 74px 1fr 92px; gap: 16px; align-items: center; }
+  .pool .lab { font-size: 12px; color: var(--ink-2); font-family: ui-monospace, Menlo, monospace; }
+  .pool .val { font-size: 12px; color: var(--ink-2); text-align: right; font-variant-numeric: tabular-nums;
+               font-family: ui-monospace, Menlo, monospace; }
+  .bar { height: 22px; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 2px; position: relative; overflow: hidden; }
+  .bar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); opacity: .82; }
+  .bar.warn i { background: var(--warn); }
+  .bar b {
+    position: absolute; right: 7px; top: 50%; transform: translateY(-50%);
+    font-size: 10.5px; color: var(--ink-3); font-family: ui-monospace, Menlo, monospace; font-weight: 500;
+  }
+
+  /* ---------------- callout ---------------- */
+  .callout {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-left: 3px solid var(--warn); border-radius: 3px;
+    padding: 20px 24px; margin: 26px 0; box-shadow: var(--shadow);
+  }
+  .callout.acc { border-left-color: var(--accent); }
+  .callout .eyebrow { color: var(--warn); margin-bottom: 8px; display: block; }
+  .callout.acc .eyebrow { color: var(--accent-ink); }
+  .callout p:last-child { margin-bottom: 0; }
+
+  /* ---------------- gates: a real sequence, so numbering is information ---------------- */
+  .gates { display: grid; gap: 0; margin-top: 8px; }
+  .gate {
+    display: grid; grid-template-columns: 52px 1fr; gap: 20px;
+    padding: 20px 0; border-bottom: 1px solid var(--rule);
+  }
+  .gate .n {
+    font-family: ui-monospace, Menlo, monospace; font-size: 22px; font-weight: 600;
+    color: var(--rule-strong); line-height: 1; padding-top: 2px; font-variant-numeric: tabular-nums;
+  }
+  .gate.board .n { color: var(--accent); }
+  .gate h4 { margin: 0 0 6px; font-size: 16px; font-weight: 600; font-family: inherit; }
+  .gate .cost { font-size: 12px; color: var(--ink-3); font-family: ui-monospace, Menlo, monospace; }
+  .gate p { margin: 8px 0 0; font-size: 15px; color: var(--ink-2); }
+  .tag {
+    display: inline-block; font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 2px; margin-left: 8px; vertical-align: 2px; font-weight: 600;
+  }
+  .tag.hw { background: var(--accent-soft); color: var(--accent-ink); }
+  .stop { color: var(--warn); }
+
+  /* ---------------- risk / unknown lists ---------------- */
+  ol.risks { list-style: none; counter-reset: r; padding: 0; margin: 0; }
+  ol.risks li {
+    counter-increment: r; position: relative; padding: 16px 0 16px 40px;
+    border-bottom: 1px solid var(--rule); font-size: 15px; color: var(--ink-2);
+  }
+  ol.risks li::before {
+    content: counter(r); position: absolute; left: 0; top: 16px;
+    font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink-3);
+    border: 1px solid var(--rule-strong); border-radius: 2px;
+    width: 22px; height: 22px; display: grid; place-items: center;
+  }
+  ol.risks li b { color: var(--ink); }
+
+  ul.plain { list-style: none; padding: 0; margin: 0; }
+  ul.plain li {
+    padding: 13px 0; border-bottom: 1px solid var(--rule);
+    font-size: 15px; color: var(--ink-2);
+  }
+  ul.plain li b { color: var(--ink); font-weight: 600; }
+
+  footer {
+    margin-top: 64px; padding-top: 26px; border-top: 1px solid var(--rule);
+    font-size: 13px; color: var(--ink-3);
+  }
+  footer p { margin: 0 0 10px; max-width: 68ch; }
+
+  a { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  @media (max-width: 620px) {
+    body { font-size: 16px; padding: 0 18px 72px; }
+    .pool { grid-template-columns: 64px 1fr; }
+    .pool .val { grid-column: 2; text-align: left; margin-top: -8px; }
+    .gate { grid-template-columns: 36px 1fr; gap: 14px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">STM32N6570-DK &middot; Neural-ART &middot; feasibility</p>
+    <h1>Citrinet-256 maps to the NPU<br><span class="dim">with zero software epochs</span></h1>
+    <p class="standfirst">
+      A push-to-talk English captioner running entirely on an STM32N6: microphone
+      to log-mel on the Cortex-M55, a fixed-shape int8 CTC encoder on Neural-ART,
+      greedy decode and text on the LCD. This is the go/no-go, taken before any
+      firmware was written.
+    </p>
+    <div class="verdict">
+      <b>GO</b>
+      <span>at an 8-second window &mdash; not the 4 seconds originally planned</span>
+    </div>
+    <div class="meta">
+      <span>ST Edge AI Core v4.0.1-20581</span>
+      <span>stt_en_citrinet_256_gamma_0_25</span>
+      <span>~10M params &middot; 9.7 MB int8</span>
+      <span>no board measurements yet</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>The question that mattered</h2>
+    <div class="col">
+      <p>
+        The plan rested on one assumption: that Citrinet's depthwise and grouped
+        1-D convolution stack would reach Neural-ART hardware. Neural-ART is
+        fundamentally a 2-D convolution engine. Rank-3 tensors, <code>groups=256</code>
+        depthwise convolutions and squeeze-excitation blocks are all places where
+        a 2-D engine plausibly falls back to the Cortex-M55 &mdash; and on this
+        part, latency is epoch-bound, so every fallback is expensive.
+      </p>
+      <p>It maps. Completely.</p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <caption>Compiled against ST's real audio-application memory geometry. Pool ceiling 1,507,328 B.</caption>
+        <thead>
+          <tr>
+            <th>window</th><th>T</th><th>epochs</th><th>software</th><th>hybrid</th>
+            <th>activations</th><th>% pool</th><th>weights</th><th>MACs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>4 s</td><td>400</td><td>626</td><td><span class="z">0</span></td><td><span class="z">0</span></td><td>306 KB</td><td>20.8%</td><td>9.677 MB</td><td>1.117 G</td></tr>
+          <tr class="hi"><td>8 s</td><td>800</td><td>628</td><td><span class="z">0</span></td><td><span class="z">0</span></td><td>625 KB</td><td>42.5%</td><td>9.728 MB</td><td>2.234 G</td></tr>
+          <tr><td>12 s</td><td>1200</td><td>628</td><td><span class="z">0</span></td><td><span class="z">0</span></td><td>1,017 KB</td><td>69.1%</td><td>9.731 MB</td><td>3.351 G</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="col">
+      <p>
+        The graph is 503 nodes of exactly seven operator types &mdash; 282 Conv
+        (107 of them grouped), 130 Relu, 23 ReduceMean, 23 Sigmoid, 23 Mul,
+        21 Add, 1 Transpose &mdash; at rank 3 throughout. No control flow, no
+        attention, no Softmax, no dynamic MatMul.
+      </p>
+    </div>
+
+    <div class="callout acc">
+      <span class="eyebrow">for contrast</span>
+      <p>
+        The Whisper-tiny encoder, measured on this same board, ran at
+        <strong>10,935 ms</strong> &mdash; 184 of its 391 epochs in software, and
+        16.4 MB of activations spilled to PSRAM. Citrinet at 8 s is 628 epochs,
+        none in software, entirely on-chip. That gap is the whole argument for a
+        convolutional CTC encoder over an attention model on this part.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Where the 8-second window lives</h2>
+    <div class="pools">
+      <div class="pool">
+        <span class="lab">cpuRAM2</span>
+        <span class="bar"><i style="width:19.5%"></i><b>19.5% of 1024 KB</b></span>
+        <span class="val">200 KB</span>
+      </div>
+      <div class="pool">
+        <span class="lab">npuRAM6</span>
+        <span class="bar"><i style="width:94.9%"></i><b>94.9% of 448 KB</b></span>
+        <span class="val">425 KB</span>
+      </div>
+      <div class="pool">
+        <span class="lab">octoFlash</span>
+        <span class="bar"><i style="width:8.7%"></i><b>8.7% of 112 MB</b></span>
+        <span class="val">9.728 MB</span>
+      </div>
+    </div>
+    <div class="col">
+      <p style="margin-top:22px">
+        Activations sit on-chip; weights stream from external flash. That split is
+        what makes the utterance-based design work. Doubling the window from 4 s
+        to 8 s costs <strong>+23.7% of scheduled cycles, not 2&times;</strong>,
+        because the 9.7 MB weight sweep is paid once per utterance rather than per
+        frame. Cost per second of captured audio falls from 18.4 ms at 4 s to
+        11.4 ms at 8 s.
+      </p>
+      <p>
+        The scheduler estimates 91.2 ms for the 8-second graph at 1 GHz, at 43%
+        of its own ideal. That is a compiler estimate of compute and memory
+        traffic; it excludes epoch-transition overhead, and nothing on this
+        machine has previously streamed 10 MB of weights. The honest band is
+        <strong>100&ndash;250 ms</strong> until the board says otherwise.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What the draft plan got wrong</h2>
+
+    <h3>Four seconds was the worst decision in it</h3>
+    <div class="col">
+      <p>
+        Measured on 150 natural-length LibriSpeech utterances (median 5.55 s),
+        scoring each window's output against the <em class="q">full</em> spoken
+        reference. This is truncation, not misrecognition &mdash; but a user
+        cannot tell the difference, and reads it as "it cannot understand me."
+      </p>
+    </div>
+    <div class="scroll">
+      <table>
+        <caption>Only 28.3% of dev-clean utterances are 4 seconds or shorter.</caption>
+        <thead><tr><th>window</th><th>WER vs full reference</th><th>spoken words returned</th></tr></thead>
+        <tbody>
+          <tr><td>4 s</td><td><span class="bad">47.7%</span></td><td>0.56</td></tr>
+          <tr><td>6 s</td><td>30.4%</td><td>0.73</td></tr>
+          <tr class="hi"><td>8 s</td><td>20.0%</td><td>0.84</td></tr>
+          <tr><td>12 s</td><td>9.0%</td><td>0.95</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col">
+      <p>
+        Twelve seconds is not simply better, which is why 8 s wins rather than the
+        longest window that fits. On short utterances, padding to a long window
+        costs accuracy &mdash; per-feature normalisation statistics computed over
+        a mostly-silent buffer drift. On 30 utterances under 3 seconds, WER was
+        6.15% at exact length, 6.15% in an 8 s window, and 8.21% in a 12 s window.
+        Eight seconds is the only window with no measurable padding penalty
+        <em class="q">and</em> 84% word coverage.
+      </p>
+    </div>
+
+    <h3>There was no gain stage, and that is the silent failure</h3>
+    <div class="callout">
+      <span class="eyebrow">would have shipped broken</span>
+      <p>
+        The DK's microphone puts conversational speech at roughly &minus;54 dBFS.
+        At that level <strong>97.9% of mel-filter outputs fall below NeMo's
+        log-zero guard</strong>, the logarithm saturates, per-feature
+        normalisation amplifies what is left, and word error rate goes
+        <strong>5.83% &rarr; 35.28%</strong> &mdash; while every log reports a
+        perfectly clean NPU run.
+      </p>
+      <p style="margin-top:12px">
+        Peak-normalising the captured buffer to 0.9 restores 5.83% exactly. But
+        the gain has to be applied in the PDM/MDF decimator: applied
+        <em class="q">after</em> int16 truncation, the same fix only recovers to
+        10.45%.
+      </p>
+    </div>
+
+    <h3>Three smaller corrections</h3>
+    <ul class="plain">
+      <li><b>The mel frontend was the wrong thing to fear.</b> The plan flagged NeMo preprocessing parity as the top risk. Ablating pre-emphasis, window periodicity, mel scale, power vs magnitude, log base, centring, even swapping per-feature normalisation for a single global one &mdash; every one moves WER by under a point. Only the log floor matters, and it is worth 25 points.</li>
+      <li><b>The named fallback is dead.</b> QuartzNet-15x5 needs 2,366,976 B of workspace for a single k=75 layer &mdash; 157% of the entire pool &mdash; and fails to compile on-chip. It has fifteen such layers. The real fallback is the same checkpoint at T=400, already compiled at 73.7 ms.</li>
+      <li><b>Touch is not available.</b> The GT911 driver ships in neither ST Getting-Started package, so "hold to speak on the touchscreen" is not buildable as scoped. Use the USER1 button. Separately, the audio package is strictly headless &mdash; the whole LCD stack has to be grafted in from the vision package.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Work plan</h2>
+    <div class="col">
+      <p>
+        Ordered so the cheapest question is asked first, and so the first thing
+        that can contradict desk research is reached in about one developer-day.
+        Gates 0&ndash;2 need neither the board nor a new compile.
+      </p>
+    </div>
+
+    <div class="gates">
+      <div class="gate">
+        <span class="n">00</span>
+        <div>
+          <h4>Freeze the artifact set <span class="cost">&mdash; 1 h, done</span></h4>
+          <p>Scripts, graphs, tokenizer and compile evidence out of scratch storage and under version control.</p>
+        </div>
+      </div>
+      <div class="gate">
+        <span class="n">01</span>
+        <div>
+          <h4>WER at the shipped window, fp32 and int8 <span class="cost">&mdash; 3 h</span></h4>
+          <p>Current evidence at 4 s: 5.60% &rarr; 6.09%, frame-argmax agreement 0.9649. <span class="stop">Stop if int8 costs more than 2 points.</span> First verify the calibration and evaluation splits are genuinely disjoint &mdash; that check was deferred and never done.</p>
+        </div>
+      </div>
+      <div class="gate">
+        <span class="n">02</span>
+        <div>
+          <h4>Recompile against the firmware's memory map <span class="cost">&mdash; 30 min</span></h4>
+          <p>ST's audio application places external flash at <code>0x70180000</code>; the screening pool used <code>0x71000000</code>. Left unreconciled, the weights land at the wrong offset and the network reads garbage while the epoch table still looks perfect.</p>
+        </div>
+      </div>
+      <div class="gate board">
+        <span class="n">03</span>
+        <div>
+          <h4>Build and flash the unmodified ST audio app <span class="tag hw">board</span></h4>
+          <p>Prove the toolchain path with ST's own known-good binary before putting a model in the loop. Read the OTP fuse state first &mdash; blowing them is permanent.</p>
+        </div>
+      </div>
+      <div class="gate board">
+        <span class="n">04</span>
+        <div>
+          <h4>Swap in Citrinet, feed it a canned feature vector <span class="tag hw">board</span></h4>
+          <p>Ignore the microphone entirely. Compare on-device token IDs against host ONNX Runtime. <strong>This is the first point where silicon can contradict desk research</strong>, and it arrives roughly one developer-day in.</p>
+        </div>
+      </div>
+      <div class="gate board">
+        <span class="n">05</span>
+        <div>
+          <h4>Log-mel frontend on the M55 <span class="tag hw">board</span> <span class="cost">&mdash; 2&ndash;3 d</span></h4>
+          <p>With the gain stage and the log-floor telemetry built in from the first line, not retrofitted. <span class="stop">Stop if guard occupancy stays above 20% after gain</span> &mdash; that means the gain sits in the wrong place in the chain.</p>
+        </div>
+      </div>
+      <div class="gate board">
+        <span class="n">06</span>
+        <div>
+          <h4>Greedy CTC and detokeniser <span class="tag hw">board</span> <span class="cost">&mdash; 0.5 d</span></h4>
+          <p>Argmax over 1025 int8 logits &times; 100 frames, collapse repeats, drop blank, concatenate pieces. Roughly 50 lines &mdash; both scales are per-tensor, so no dequantisation is needed.</p>
+        </div>
+      </div>
+      <div class="gate board">
+        <span class="n">07</span>
+        <div>
+          <h4>LCD graft <span class="tag hw">board</span> <span class="cost">&mdash; 1&ndash;1.5 d</span></h4>
+          <p>Deliberately last: it is the one task that cannot fail in a way that invalidates the model.</p>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <p style="margin-top:24px">
+        Eight to eleven developer-days total, with the risk front-loaded into
+        gates 0&ndash;4 &mdash; about a day and a half combined.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Top risks</h2>
+    <ol class="risks">
+      <li><b>Gain staging against the log-zero guard.</b> Silent and catastrophic; absent from the original plan. Detect by instrumenting guard occupancy on the first frontend commit, and refuse to invoke the model when more than 20% of bins sit at the floor.</li>
+      <li><b>ST int8 is not ONNX Runtime int8.</b> Every accuracy figure here is ORT QDQ semantics. Prior work on this board recorded ST diverging at cosine 0.996 with a systematic +0.23 mean bias. Detected at gate 4.</li>
+      <li><b>Babble noise &mdash; the room the demo is given in.</b> At 5 dB SNR: white 22.3%, pink 15.3%, <b>babble 60.1%</b>. Competing speech is the one noise type that destroys it, and demos happen in rooms full of talking people. "Hold the board near your mouth" is a legitimate and free mitigation.</li>
+      <li><b>Grouped convolution mapping is undocumented.</b> The word "group" appears zero times in ST's operator support table. All 107 grouped convolutions reaching hardware is an empirical property of this exact compiler build with no vendor commitment &mdash; pin the toolchain and make the 628-epoch compile a regression gate.</li>
+      <li><b>OTP fuses, and two flash workflows that overwrite each other.</b> Fuse blowing is permanent and this board's state is unverified. Flashing the demo also overwrites the external-flash weights the measurement harness uses.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Only silicon settles these</h2>
+    <ul class="plain">
+      <li><b>Real inference latency.</b> 91.2 ms is a scheduler estimate that excludes epoch-transition overhead. Honest band 100&ndash;250 ms.</li>
+      <li><b>On-device int8 fidelity.</b> No amount of host work resolves ST-versus-ORT quantisation arithmetic.</li>
+      <li><b>M55 log-mel cost.</b> Nobody on this machine has measured any on-device audio frontend &mdash; every prior deployment fed the NPU from a host over serial. A ~40&times; win is available: the filterbank is 2.4% non-zero, so sparse triangular filters cost ~500 MAC/frame against 20,560 for a dense matmul.</li>
+      <li><b>The microphone's real acoustic behaviour.</b> Every degradation measured here is simulated &mdash; synthetic impulse responses, one real 0.1 s RIR, corpus-derived babble.</li>
+    </ul>
+  </section>
+
+  <footer>
+    <p>
+      <strong>Every WER figure on this page is LibriSpeech dev-clean read speech
+      through a simulated channel.</strong> The checkpoint's training set is broad
+      &mdash; 7,000+ hours including Fisher, Switchboard, WSJ and Common Voice
+      &mdash; so spontaneous desk speech is less out-of-distribution than one
+      might assume. But no number here was produced by a human talking to this
+      board.
+    </p>
+    <p>
+      Compile figures are ST Edge AI Core v4.0.1-20581 against
+      <code>stt_en_citrinet_256_gamma_0_25</code> (CC-BY-4.0), quantised static
+      QDQ int8 on real speech. One adversarial check of the memory gate failed to
+      return; its question was answered instead by three real compiles against
+      ST's audio-pool geometry.
+    </p>
+  </footer>
+
+</div>
