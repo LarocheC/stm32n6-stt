@@ -261,9 +261,93 @@ shipped as a binary, and only the CubeIDE output is known to run. If the
 Makefile path is simply not exercised by ST, its breakage would be invisible to
 them.
 
-This is not yet proven. What would prove it: get the Makefile-built image
-running under the documented dev-mode gdb workflow and see where it diverges, or
-build once through CubeIDE's toolchain and compare entry points.
+The hypothesis was wrong in its blame but right in its clue. See below.
+
+## ROOT CAUSE: the signing step omits `-align`
+
+### The code was never broken
+
+Under the documented dev-mode gdb workflow the application runs perfectly. Every
+init function is reached, in order:
+
+```
+MPU_Config  →  Int_Mem_Config  →  Ext_Mem_Config  →  NPU_Config
+            →  IAC_Config      →  UART_Config
+```
+
+Nothing hangs. `Ext_Mem_Config()`, the prior favourite, returns fine. So the
+fault was never in the source, the compiler, or early init — it is in the
+**boot image**, which is why it only manifests when the FSBL loads it and never
+under a debugger that loads the ELF directly.
+
+### The entry point in the header is wrong
+
+| | value |
+|---|---|
+| vector table word[0] (initial SP) | `0x34100000` |
+| vector table word[1] (`Reset_Handler`) | `0x340167BD` |
+| ELF entry point (`readelf -h`) | `0x340167BD` |
+| **signed header `+0x70`, what the FSBL jumps to** | **`0x34002F79`** |
+
+`0x34002F79` is in the middle of `.text` (`0x34000750`–`0x3401ACC8`). The FSBL
+jumps into the interior of a function and the part dies instantly — before
+`UART_Config()`, hence not one byte of output.
+
+### `-align` is the fix, and it was already in the fault atlas
+
+`STM32_SigningTool_CLI --align`: *"Align the payload to the 0x400 offset by
+adding padding bytes at the beginning of the payload."* Signing the identical
+`.bin` four ways:
+
+| flags | header entry | size |
+|---|---|---:|
+| ST's Makefile (`-s -bin -nk -t ssbl -hv 2.3`) | `0x34002F79` ✗ | 244,192 |
+| **`… -align`** | **`0x340167BD`** ✓ | 244,640 |
+| `… -ep 0x340167bd` | `0x340167BD` ✓ | 244,192 |
+| `… -align -ep -la` | `0x340167BD` ✓ | 244,640 |
+
+Without the 0x400 padding the payload begins at the wrong offset, and the
+header's computed entry point is wrong by exactly that confusion.
+
+**`bm.mk:39` does not pass `-align`.** ST's Makefile predates the requirement.
+The zoo's own `config/toolchain.toml` already carried the knowledge —
+*"STM32CubeProgrammer 2.21+ (2.21 introduced the mandatory `-align` on
+signing)"* — and this machine runs **2.22.0**. The note existed; it simply was
+not connected to a symptom that looks like a dead board.
+
+That is the atlas earning its keep twice in one session: this entry, and the
+`DEV_CONNECT_ERR` wedge below.
+
+### The corrected signing command
+
+```bash
+STM32_SigningTool_CLI -s -bin GS_Audio_N6.bin -nk -t ssbl -hv 2.3 \
+                      -align -o GS_Audio_N6_sign.bin
+```
+
+Flashed and verified by read-back: the board's header at `+0x70` now reads
+`340167bd`.
+
+**Verification gate for every future signing:** the word at `+0x70` of the
+signed image must equal `Reset_Handler` from `nm`. Two commands, and it catches
+silently-unbootable images before they cost a boot-switch round trip.
+
+## The probe wedges after a gdb session — and detach/attach clears it
+
+Immediately after killing `ST-LINK_gdbserver`, every flash attempt failed with
+`ST-LINK error (DEV_CONNECT_ERR)`, three times running.
+
+`zoo/faults/known_issues.toml:2079` describes exactly this — *"ST-LINK/usbip
+link wedges after a killed inference, a gdb weight load, or a completed validate
+run"* — and its workaround worked verbatim:
+
+```bash
+usbipd detach --busid 1-1 && usbipd attach --wsl --busid 1-1
+```
+
+The probe answered immediately afterwards. Note the atlas's caveat that a
+*physical* replug is required when the wedge follows a `validate` run; after a
+gdb session the software cycle is enough.
 
 ## Bench procedure: `mode=UR`, not `mode=HOTPLUG`
 
