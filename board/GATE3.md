@@ -215,6 +215,56 @@ question falls back to one flash-and-boot per candidate compiler.
 the board was first booted from flash, so something about that transition
 persists.
 
+**The gdbserver flags above were wrong.** ST document the working invocation in
+`README.md:178`:
+
+```bash
+ST-LINK_gdbserver -p 61234 -l 1 -d -s -cp <cubeprog-bin> -m 1 -g
+```
+
+`-m 1` selects **access port 1** — the same `ap=1` ST's flash script uses — and
+`-g` **attaches to a running target** rather than trying to halt it. Neither
+`--halt` nor `-k` appears. With ST's flags the server gets further but still
+fails in the *flash-boot* position (`Target unknown error 32`); the documented
+workflow requires the **development** position, which is the one thing not yet
+tried.
+
+## The compiler is NOT the cause
+
+The Arm GNU 13.3 build, flashed alongside ST's known-good FSBL and weights and
+booted from flash, is **also silent**. Two compilers from two different lineages,
+same source, both dead; ST's prebuilt from that same source runs. That
+eliminates the toolchain as the differentiator and moves suspicion to the build
+path itself.
+
+### The signed headers say the two images are not the same build
+
+Extracting ST's prebuilt app payload from its hex and diffing against ours:
+
+| header offset | ST prebuilt | ours (13.3) | meaning |
+|---|---|---|---|
+| `0x00` | `53544d32` | `53544d32` | `STM3` magic, same |
+| `0x64` | `0166E84F` | `01677F6E` | checksum, expected to differ |
+| `0x68` | `00020300` | `00020300` | header version 2.3, same |
+| `0x6C` | `0003B900` (244,480) | `0003B7A0` (244,128) | image length |
+| **`0x70`** | **`0x34016B19`** | **`0x34002F79`** | **entry point** |
+
+Both link against `RAM : ORIGIN = 0x34000400`, so ST's reset handler sits
+`0x16719` (≈91 KB) into the image where ours sits `0x2B79` (≈11 KB) in. Section
+ordering under a different optimiser moves this by kilobytes, not by eighty of
+them.
+
+**Working hypothesis: ST's prebuilt binaries are built by STM32CubeIDE from
+`Projects/GS/STM32CubeIDE/.cproject`, not by the Makefile.** The README presents
+both paths as equals (`README.md:160-190`) but only the CubeIDE output is
+shipped as a binary, and only the CubeIDE output is known to run. If the
+Makefile path is simply not exercised by ST, its breakage would be invisible to
+them.
+
+This is not yet proven. What would prove it: get the Makefile-built image
+running under the documented dev-mode gdb workflow and see where it diverges, or
+build once through CubeIDE's toolchain and compare entry points.
+
 ## Bench procedure: `mode=UR`, not `mode=HOTPLUG`
 
 Once the board has been in boot-from-flash mode, `mode=HOTPLUG` fails with
