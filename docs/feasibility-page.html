@@ -238,6 +238,41 @@
   </header>
 
   <section>
+    <h2>Gate status</h2>
+    <div class="scroll">
+      <table>
+        <caption>Gates 0&ndash;2 are host-side. Both measured gates were re-run from scratch by an adversarial verifier and reproduced exactly.</caption>
+        <thead><tr><th>gate</th><th>verdict</th><th>the number that decides it</th></tr></thead>
+        <tbody>
+          <tr><td>0 &mdash; freeze the artifact set</td><td><span class="z">CLOSED</span></td><td style="text-align:left">under version control</td></tr>
+          <tr class="hi"><td>1 &mdash; int8 vs fp32 WER at 8 s</td><td><span class="z">PASS</span></td><td style="text-align:left">int8 costs <b>+0.50 points</b> (4.91% &rarr; 5.41%, n=373, 95% CI [+0.07, +0.94]) against a ~1.0-point band</td></tr>
+          <tr class="hi"><td>2 &mdash; recompile on ST's own memory map</td><td><span class="z">PASS</span></td><td style="text-align:left"><b>0 SW / 0 hybrid</b>, 947,200 B activations, <b>0 B in hyperRAM</b>, weights at <b>0x70180000</b></td></tr>
+          <tr><td>3 &mdash; flash ST's unmodified app</td><td>ready</td><td style="text-align:left">the irreversible step turned out already spent &mdash; see below</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <span class="eyebrow">the plan called this a safe warm-up. it is not.</span>
+      <p>
+        "Flash ST's unmodified app first" permanently burns two OTP fuses on a
+        fresh board. <code>fuse_vddio()</code> is compiled in whether you like it
+        or not &mdash; the BSP header self-defines <code>USE_STM32N6570_DK</code>,
+        and <code>fuse_hardware_conf()</code> programs OTP word 124 with no prompt
+        when a bit reads clear.
+      </p>
+      <p style="margin-top:12px">
+        A read-only dump of <em class="q">this</em> board returns
+        <strong>word 124 = 0x00018000</strong> &mdash; both bits already set, so
+        the program branch never runs and gate 3 carries no irreversible action
+        here. Consistent with its history: the measurement harness has been
+        streaming weights from external flash for months, which does not work
+        without exactly that fuse.
+      </p>
+    </div>
+  </section>
+
+  <section>
     <h2>The question that mattered</h2>
     <div class="col">
       <p>
@@ -274,6 +309,31 @@
         (107 of them grouped), 130 Relu, 23 ReduceMean, 23 Sigmoid, 23 Mul,
         21 Add, 1 Transpose &mdash; at rank 3 throughout. No control flow, no
         attention, no Softmax, no dynamic MatMul.
+      </p>
+    </div>
+
+    <div class="callout">
+      <span class="eyebrow">gate 2 moved this table</span>
+      <p>
+        Those are screening numbers, compiled with the zoo's option string, which
+        includes <code>--Oauto-sched</code>. <strong>ST's audio application ships
+        without it.</strong> Under ST's own options the 8-second row becomes
+        <strong>618 epochs, 925 KB, 62.8% of the pool</strong> &mdash; still zero
+        software, still zero hybrid, still entirely on-chip.
+      </p>
+      <p style="margin-top:12px">
+        The 12-second row does not survive the change: it <strong>spills 150 KB to
+        PSRAM while the epoch table still reads 0 SW / 0 hybrid</strong>, and its
+        cycle total is <em class="q">lower</em> than the on-chip build's. A compile
+        can pass every summary check and be quietly memory-bound, so the gate has
+        to read the per-pool placement line, not the epoch count.
+      </p>
+      <p style="margin-top:12px">
+        The pool is also not fungible: npuRAM6 sits at <strong>94.87%</strong> with
+        about 23 KB spare while cpuRAM2 is at 48.83%. Headroom exists but is not
+        where a single percentage suggests &mdash; though npuRAM3/4/5 are powered,
+        clocked, and declared to neither the linker nor the compiler, so the
+        1.47 MB ceiling is an allocation policy rather than a hardware limit.
       </p>
     </div>
 
@@ -404,21 +464,21 @@
       <div class="gate">
         <span class="n">00</span>
         <div>
-          <h4>Freeze the artifact set <span class="cost">&mdash; 1 h, done</span></h4>
+          <h4>Freeze the artifact set <span class="tag hw">closed</span></h4>
           <p>Scripts, graphs, tokenizer and compile evidence out of scratch storage and under version control.</p>
         </div>
       </div>
       <div class="gate">
         <span class="n">01</span>
         <div>
-          <h4>WER at the shipped window, fp32 and int8 <span class="cost">&mdash; 3 h</span></h4>
+          <h4>WER at the shipped window, fp32 and int8 <span class="tag hw">passed</span></h4>
           <p>Current evidence at 4 s: 5.60% &rarr; 6.09%, frame-argmax agreement 0.9649. <span class="stop">Stop if int8 costs more than 2 points.</span> First verify the calibration and evaluation splits are genuinely disjoint &mdash; that check was deferred and never done.</p>
         </div>
       </div>
       <div class="gate">
         <span class="n">02</span>
         <div>
-          <h4>Recompile against the firmware's memory map <span class="cost">&mdash; 30 min</span></h4>
+          <h4>Recompile against the firmware's memory map <span class="tag hw">passed</span></h4>
           <p>ST's audio application places external flash at <code>0x70180000</code>; the screening pool used <code>0x71000000</code>. Left unreconciled, the weights land at the wrong offset and the network reads garbage while the epoch table still looks perfect.</p>
         </div>
       </div>
@@ -434,13 +494,15 @@
         <div>
           <h4>Swap in Citrinet, feed it a canned feature vector <span class="tag hw">board</span></h4>
           <p>Ignore the microphone entirely. Compare on-device token IDs against host ONNX Runtime. <strong>This is the first point where silicon can contradict desk research</strong>, and it arrives roughly one developer-day in.</p>
+          <p><b>Blocker found in the vendor tree:</b> ST's own model check demands a float32 or 2-D output. Ours is int8 at rank 3, so <code>ai_dpu.c</code> rejects it and spins in <code>Error_Handler()</code>. It is their validation being narrower than their runtime &mdash; a two-line fix, but it fails before the first inference if missed.</p>
         </div>
       </div>
       <div class="gate board">
         <span class="n">05</span>
         <div>
-          <h4>Log-mel frontend on the M55 <span class="tag hw">board</span> <span class="cost">&mdash; 2&ndash;3 d</span></h4>
+          <h4>Log-mel frontend on the M55 <span class="tag hw">board</span> <span class="cost">&mdash; 3 d</span></h4>
           <p>With the gain stage and the log-floor telemetry built in from the first line, not retrofitted. <span class="stop">Stop if guard occupancy stays above 20% after gain</span> &mdash; that means the gain sits in the wrong place in the chain.</p>
+          <p><b>Neither shipped preprocessing path can be used as-is.</b> NeMo computes <code>ln(mel + 2&#8315;&#178;&#8308;)</code>, flooring at about &minus;16.6. ST clamps instead. In the float16 path that is fatal &mdash; <code>FLT_MIN</code> underflows to zero in half precision and the code takes the logarithm of it. The float32 path is finite but floors at &minus;87 where NeMo floors at &minus;16.6. Since the guard is the one frontend parameter worth 25 WER points, this step gets written by hand. Per-feature normalisation is absent from both and must be written too.</p>
         </div>
       </div>
       <div class="gate board">
@@ -460,8 +522,8 @@
     </div>
     <div class="col">
       <p style="margin-top:24px">
-        Eight to eleven developer-days total, with the risk front-loaded into
-        gates 0&ndash;4 &mdash; about a day and a half combined.
+        Six and a half developer-days remain. Gates 0&ndash;2 are closed and gate 6's
+        tokenizer table is already generated and byte-verified at 8,222 B.
       </p>
     </div>
   </section>
