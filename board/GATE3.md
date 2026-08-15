@@ -183,6 +183,38 @@ Plan: break on `SystemClock_Config_Full`, `MPU_Config`, `Ext_Mem_Config`,
 does not return. `Ext_Mem_Config()` is the prior favourite, since it reconfigures
 the xSPI interface the code is running from.
 
+**That plan does not work, and the reason is worth recording.**
+`ST-LINK_gdbserver` cannot halt this part in either boot-switch position:
+
+```
+Target not halted after reset. Force halt
+Failed to halt target
+Error in initializing ST-LINK device.  Reason: Target not halted.
+```
+
+Tried with and without `-k` / `--initialize-reset` (the server's equivalent of
+`mode=UR`) and with `--halt`. Meanwhile `STM32_Programmer_CLI -c port=SWD
+mode=UR` connects to the same board, reads external flash, and — in the
+development switch position — erases and writes it. So the probe and the wiring
+are fine; it is specifically the debugger's halt-on-reset handshake that fails.
+
+Consequence: **no source-level debugging on this board yet**, and the toolchain
+question falls back to one flash-and-boot per candidate compiler.
+
+### Access matrix, measured
+
+| operation | dev position | flash-boot position |
+|---|---|---|
+| `mode=HOTPLUG` connect | fails | fails |
+| `mode=UR` connect | **works** | **works** |
+| read external flash | **works** | **works** |
+| erase / write external flash | **works** | fails |
+| `ST-LINK_gdbserver` halt | fails | fails |
+
+`mode=HOTPLUG` failing in *both* positions is itself notable — it worked before
+the board was first booted from flash, so something about that transition
+persists.
+
 ## Bench procedure: `mode=UR`, not `mode=HOTPLUG`
 
 Once the board has been in boot-from-flash mode, `mode=HOTPLUG` fails with
