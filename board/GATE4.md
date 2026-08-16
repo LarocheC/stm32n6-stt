@@ -578,3 +578,112 @@ further guessing, between:
 `board/flash_and_verify.sh` covers the other unverified link in the same session:
 it reads the app region back off the flash and byte-compares it against the signed
 binary, which has never been done for a Citrinet build.
+
+---
+
+# Round 8 — the boot theory was wrong. It boots fine and hangs in the NPU invoke.
+
+**Rounds 3-7 were chasing an artefact.** The Citrinet image does not die before
+`UART_Config`. It boots completely, initialises every subsystem, loads the model,
+feeds the input, enters `stai_network_run()` — and never comes out.
+
+## What made six rounds read "silent"
+
+The board prints about five lines and then hangs, all within the first two seconds
+of boot. A power cycle detaches the USB device and usbipd takes ~8 s to re-attach.
+**Every one of those lines was emitted into a window in which nothing was
+listening**, and "0 bytes" was then read as "the board is dead".
+
+ST's AED model looked different only because its inference *returns*, so its loop
+prints forever and is eventually observable no matter when you start listening.
+That single asymmetry — not the graph, not the memory map, not the FSBL —
+produced the entire "Citrinet dies before `main`" conclusion.
+
+The fix was to stop reasoning from absence and make the output continuous: hold
+each progress marker for ~2 s so the boot becomes a stream, and the last character
+received names the last step that completed.
+
+## What the board actually does
+
+```
+Ux20 1x20 2x20 3x20 4x20 Rx20 5x20 6x20 7x20 8x20 9x20
+System configuration (Bare Metal)
+ SYSCLK clock : 600 MHz    HCLK clock : 400 MHz    CACHE conf. : $I/$D=(True,True)
+ NPU clock    : 800 MHz    NIC clock  : 800 MHz
+Dx20 Ex20
+# gate4: canned features, mic bypassed
+Lx20
+ tools version   : v4.0.1        network rt lib : v1.1.3-71120109
+AI_DPU: Activation are already allocated
+Mx20
+# ---- run 0 ----
+# in=0x34350000 out=0x34350000 scale=8.297212 off=0
+# fed 64000 B of 64000 B input
+# invoking...
+<x20          <-- enters AiDPUProcess
+              <-- and never returns.  No '>'.
+```
+
+`U`…`9` are `UART_Config`, `MPU_Config`, `Int_Mem_Config`, `Ext_Mem_Config`,
+`NPU_Config`, `RISAF_Config`, `IAC_Config`, the two cache enables, the sleep
+clocks and the BSP init. `D` is `displaySystemSetting()` returning, which also
+proves the printf path. `M` is `AiDPULoadModel()` returning `DPU_OK`.
+
+Everything works. The input scale is right (`8.297212 = 1/0.120522`), all 64,000 B
+are fed, and the invoke is entered. **The fault is inside the NPU run, exactly
+where Round 2 put it under gdb, and nowhere near the boot.**
+
+## Refuted this round, on the board, with a validated instrument
+
+| hypothesis | test | result |
+|---|---|---|
+| flash contents corrupt | read back FSBL (62,752 B), app (178,336 B) and weights and byte-compare | **all identical** |
+| the app dies before `UART_Config` | raw `USART1->TDR` beacon, no printf, no buffering | **refuted — reaches `UART_Config` and far beyond** |
+| RISAF firewall blocks the NPU from AXISRAM2 | called `RISAF_Config()`, which ST define and never call (`--gc-sections` drops it entirely) | **no change — still hangs at `<`** |
+| an unexpected interrupt is trapped | replaced all **195** `while (1) {}` handlers in `stm32n6xx_it.c` with a reporter that streams `IPSR` forever | **no trap fires — not NPU1/2/3, not IAC, not any fault** |
+
+That last one is worth stating plainly: almost every handler in ST's
+`stm32n6xx_it.c` is a deliberate `while (1) {};` trap, so *any* unexpected
+interrupt would hang the CPU inside an ISR with no output — a perfect match for
+the symptom. It is not what is happening. Nothing fires.
+
+Note also that `NPU0_IRQHandler` being commented out is **correct, not a bug**:
+the ll_aton runtime supplies its own. NPU1/2/3 are the "should never happen"
+traps, and they stay quiet.
+
+## Where it is
+
+`AiDPUProcess()` → `stai_network_run(..., STAI_MODE_SYNC)` →
+`__ll_aton_stai_run_synchonously()` (`ll_aton_stai_internal.c:359`):
+
+```c
+do {
+  ll_aton_rt_ret = LL_ATON_RT_RunEpochBlock(nn_instance);
+  if (ll_aton_rt_ret == LL_ATON_RT_WFE) LL_ATON_OSAL_WFE();
+} while (ll_aton_rt_ret != LL_ATON_RT_DONE);
+```
+
+No interrupt is trapped and no fault is raised, so the M55 is going round this
+loop while an epoch it started never reports completion. That is the same
+condition Round 2 saw under gdb, where debug events kept nudging it forward and
+made it look merely "pathologically slow" rather than stopped.
+
+## Next: which epoch
+
+The runtime exposes exactly the hook needed —
+`LL_ATON_RT_SetNetworkCallback(nn_instance, cb)` with
+`LL_ATON_RT_Callbacktype_PRE_START` / `POST_END` per epoch block
+(`ll_aton_rt_user_api.h:150`), and this build already defines `LL_ATON_EB_DBG_INFO`,
+so each `LL_ATON_RT_EpochBlockItem_t` carries `epoch_num`, the streaming-engine
+masks and the estimated cycle counts.
+
+Emitting one raw character per epoch start and end turns the hang into a count:
+whichever epoch starts and never ends is the one to look at, and its
+`in_streng_mask` / `out_streng_mask` say which NPU streaming engines it was
+waiting on. The instance pointer is reachable from the stai handle —
+`_stai_aton_context` has `network_instance` as a member and `stai_network *` is
+that context.
+
+That is one build and one boot cycle, and it converts "the graph hangs" into
+"epoch N, on streaming engine M" — which is both actionable here and reportable
+upstream.
