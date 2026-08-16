@@ -935,3 +935,57 @@ already proven to work here: `res.0.0` is a `group=1, kernel=1, stride=2`
 convolution that executes correctly in this very graph.
 
 Gate 4's question — *can this part execute this graph* — is answered: **yes.**
+
+---
+
+# Round 12 — the shippable fix: fold the decimation into the pointwise convolution
+
+The `Slice` workaround of Round 11 works but costs 4 software epochs and 800 kB of
+PSRAM. Neither is necessary. In the Citrinet block the depthwise convolution is
+followed by a pointwise one with only quantise/dequantise in between:
+
+```
+Conv  group=256 k=3 stride=2      <- hangs the NPU
+QuantizeLinear / DequantizeLinear <- elementwise, commutes with decimation
+Conv  group=1   k=1 stride=1
+```
+
+Moving the stride one operator downstream gives the identical selection:
+
+```
+Conv  group=256 k=3 stride=1
+QuantizeLinear / DequantizeLinear
+Conv  group=1   k=1 stride=2      <- the form res.0.0 already proves works here
+```
+
+`max |diff| = 0` against the original over four random inputs, and it adds no node.
+
+## It is free
+
+| | original (hangs) | Round 11 `Slice` | **fold** |
+|---|---:|---:|---:|
+| epochs | 45 | 50 | **45** |
+| software epochs | 0 | 4 | **0** |
+| cpuRAM2 | 200 kB | 900 kB | **200 kB** |
+| hyperRAM / PSRAM | 0 | 800 kB | **0** |
+| octoFlash weights | 540.157 kB | 548.704 kB | **540.126 kB** |
+
+The resource profile is that of the graph that hung. The only difference is which
+operator performs the decimation.
+
+## On the board
+
+```
+<046f019i002o064>Ox20# invoke returned
+# ---- run 7 ----
+```
+
+**315 epoch events, 315 completed, 7 inferences returned, no fault**, booted from
+flash with PSRAM disabled and `BSP_XSPI_RAM_Init` not even linked.
+
+## Still outstanding
+
+`# invoke 1021881927 cycles` remains meaningless: `ai_device_adaptor.h` sets
+`HAS_DWT_CTRL 0` for this part and maps `port_dwt_get_cycles()` to
+`ARM_PMU_Get_CCNTR()`, but `gate4_canned()` reads `DWT->CYCCNT` directly. The
+harness must use the PMU before any latency number is quoted.
