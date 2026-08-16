@@ -1224,3 +1224,76 @@ terminal.
   three occurrences in the full model, bit-exact.
 - Two problems remain, and they may be the same problem: a uniform ~40x per-epoch
   penalty from around epoch 321, and a hard stall at epoch 352.
+
+---
+
+# Round 16 — correction: the "40x penalty" was a bug in my own instrument
+
+**Round 15's second finding is withdrawn.** There is no per-epoch penalty. The
+callback set the timestamp and *then* printed:
+
+```c
+g4_ep_t0 = port_dwt_get_cycles();
+if (...) { beacon('<'); g4_num(...); ... }   /* 18 chars INSIDE the window */
+```
+
+Eighteen characters at 14400 baud, with a `USART_ISR_TC` wait on each, is
+18 x 694 us = **12.5 ms** — which is precisely the "uniform 12.6 ms, +/-1 % across
+seventeen epochs" that Round 15 reported as a timeout. The stability that made it
+look like a fixed hardware wait was the stability of a fixed-length UART write.
+
+The first measurement (epochs 0-23) printed only in `POST_END`, after `dt` was
+computed, which is why those came out clean at ~0.33 ms and appeared to contradict
+the later ones. That contradiction was the clue and it was not followed up.
+
+## Re-measured, with the print moved ahead of the timestamp
+
+Epochs 280-351, traced individually:
+
+```
+mean = 128,819 cycles = 0.215 ms      min = 21,695      max = 1,274,497
+cumulative: epoch 64 = 35 ms, 128 = 57 ms, 192 = 79 ms, 256 = 92 ms
+```
+
+Consistent with epochs 0-320 and with the compiler's 114.7 ms estimate for the
+whole graph. Three epochs — **289, 317 and 345, spaced exactly 28 apart** — cost
+~1,274,400 cycles each; that is the heaviest operator of each repeating block, not
+an anomaly.
+
+**The NPU runs this graph at the speed it was designed to.**
+
+## So there is exactly one problem left
+
+Epoch **352** starts and never ends. It is `Conv2D_853`, and the block it sits in
+is entirely regular:
+
+```
+Reshape_849 -> Conv2D_850 (g=256, k=[7,1], s=[1,1])  -> Q/DQ
+            -> Conv2D_853 (g=1,   k=[1,1], s=[1,1])  -> Q/DQ
+            -> Reshape_856 -> Relu_857 -> Reshape_858
+            -> Conv2D_859 (g=256, k=[7,1]) -> Q/DQ -> Conv2D_862 (g=1, k=[1,1]) -> ...
+```
+
+`Conv2D_859`/`Conv2D_862` repeat the same pattern, and the equivalent blocks at
+epochs ~334-343 and earlier all complete. The operator form is not the
+discriminator this time, unlike `Conv2D_70`.
+
+What is left that distinguishes epoch 352 is its **resource assignment** —
+`in_streng 0x189` (engines 0,3,7,8), `out_streng 0x062` (engines 1,5,6). That is a
+property of the schedule, not of the graph, and it is directly testable: recompile
+with a different scheduler configuration and see whether the stall moves, changes
+operator, or disappears. Round 10 used exactly this test to prove the *opposite* for
+`Conv2D_70` — there, the hang followed the operator across two schedules.
+
+## Method note
+
+Three separate conclusions in this gate have now been overturned by controls or by
+re-reading the instrument: "the image dies before `UART_Config`" (Round 8), "the
+NPU is 2000x too slow" (Round 14), and "there is a uniform per-epoch penalty"
+(here). Each time the instrument, not the target, was what changed. Two rules that
+would have caught all three:
+
+- **Never report a timing figure derived from wall-clock divided by a count.**
+  Measure the thing itself.
+- **When two measurements of the same quantity disagree, that is the finding.**
+  Epochs 0-23 at 0.33 ms and epochs 335-351 at 12.6 ms could not both be right.
