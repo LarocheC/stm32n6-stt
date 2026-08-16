@@ -20,7 +20,10 @@ APP=$GS/BuildGCC/BM/GS_Audio_N6_sign.bin
 OUT=${TMPDIR:-/tmp}/gate4_readback
 
 APP_ADDR=0x70100000
-SLOT_END=0x70180000
+# The app slot ends wherever the weights begin. ST's stock layout puts them at
+# 0x70180000, giving 512 KB; the Citrinet build relocates them to 0x70400000,
+# which gives the app 3 MB. Pass the weights address as $2 and it is used here.
+SLOT_END=${2:-0x70180000}
 
 [ -f "$APP" ] || { echo "no signed app at $APP -- build and sign first"; exit 1; }
 mkdir -p "$OUT"
@@ -36,7 +39,7 @@ if [ "$SIZE" -gt "$LIMIT" ]; then
   echo "!! relocate the weights before flashing, or shrink the image"
   exit 1
 fi
-echo "     fits the $LIMIT B slot with $(( LIMIT - SIZE )) B to spare"
+echo "     fits the $LIMIT B slot below $(printf 0x%x $SLOT_END) with $(( LIMIT - SIZE )) B to spare"
 
 # Entry point must equal Reset_Handler|1, or the FSBL jumps through garbage.
 # The FSBL actually takes the entry from the app's vector table at 0x34000404,
@@ -56,7 +59,7 @@ echo
 echo "== writing app =="
 $CLI -c port=SWD mode=UR --extload "$EL" -w "$APP" $APP_ADDR
 
-if [ $# -ge 2 ]; then
+if [ $# -ge 2 ] && [ -n "$1" ]; then
   echo
   echo "== writing weights $1 -> $2 =="
   $CLI -c port=SWD mode=UR --extload "$EL" -w "$1" "$2"

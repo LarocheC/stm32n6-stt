@@ -989,3 +989,86 @@ flash with PSRAM disabled and `BSP_XSPI_RAM_Init` not even linked.
 `HAS_DWT_CTRL 0` for this part and maps `port_dwt_get_cycles()` to
 `ARM_PMU_Get_CCNTR()`, but `gate4_canned()` reads `DWT->CYCCNT` directly. The
 harness must use the PMU before any latency number is quoted.
+
+---
+
+# Round 13 — the full model executes correctly, and the open problem is throughput
+
+## Correctness: done
+
+The stride-2 fold applies to the full 800-frame graph. `q800_real_OE_3_3_1.onnx`
+contains **three** stride-2 depthwise convolutions — `Conv2D_70` (k=3),
+`Conv2D_478` (k=3), `Conv2D_954` (k=7) — each followed by
+`QuantizeLinear -> DequantizeLinear -> Conv(group=1, k=1, stride=1)`. Folding all
+three is **bit-exact**: 0 of 615,000 output elements differ over three random
+inputs on the `[1,100,1025]` logits.
+
+Compiled through `atonn` with the deployment invocation:
+
+| | original full | **folded full** |
+|---|---:|---:|
+| epoch blocks | 628 | 629 |
+| software epochs | 0 | **0** |
+| cpuRAM2 | 625 kB (overlaps the FSBL) | **200 kB** (clear of it) |
+| npuRAM6 | — | 425 kB |
+| PSRAM | — | **none** |
+| weights (octoFlash) | 9,728 kB | 9,960 kB |
+
+The fold *reduced* cpuRAM2 to 200 kB, so the Round 7 FSBL overlap no longer
+applies. On the board the graph runs with **no hang and no fault** — 352 epochs
+completed and still going when the trace window closed at epoch 354 of 628.
+
+**Gate 4's question, "can this part execute this graph", is answered: yes.**
+
+## Throughput: roughly 2000x off, and not yet explained
+
+The compiler's own estimate for this graph, from `c_info.json`:
+
+```
+compute_cycles = 40,317,554        ->  50.4 ms at 800 MHz
+max_cycles     = 91,770,192        -> 114.7 ms
+memory         = 200,731,988 reads / 45,607,528 writes
+                 60,045,789 cycles ->  75.1 ms
+```
+
+Measured: **one inference does not complete in 200 s**, in either wait mode. That
+is about 0.35 s per epoch, or ~280 million NPU cycles for work estimated in
+microseconds. The truncated 45-epoch graph shows the same per-epoch figure, so it
+scales with epoch count, not with graph size.
+
+### Eliminated
+
+| candidate | test | verdict |
+|---|---|---|
+| async completion event never fires | rebuilt with `LL_ATON_RT_MODE=LL_ATON_RT_POLLING`, which removes interrupts and `__WFE()` from the path entirely | **no change** — confirms Round 2 |
+| NPU cache disabled | `app_config.h:76` defines `USE_NPU_CACHE 1` and `misc_toolbox.c:22` includes it; preprocessing the translation unit yields `npu_cache_enable()` and no `npu_cache_disable()` | **enabled** |
+| software fallback | 0 software epochs, 0 hybrid | **not it** |
+| the epoch trace itself | ~20 characters per epoch at 14400 baud with `TC` waits, about 14 ms/epoch; disabling it changed nothing measurable | **not the cause** |
+
+### Not yet tested, in order of promise
+
+1. **xSPI2 prefetch is deliberately disabled.** `Ext_Mem_Config()` ends with
+   `MODIFY_REG(XSPI2->CR, XSPI_CR_NOPREF, HAL_XSPI_AUTOMATIC_PREFETCH_DISABLE)`,
+   commented "Hotfix for xspi: no prefetch". Every weight fetch from external
+   flash then pays full command latency with no lookahead. Removing that line is a
+   one-line test.
+   Counter-evidence to weigh: ST's AED model streams 106 kB of weights per epoch
+   and completes quickly, where this graph streams only 16 kB per epoch. So the
+   cost may be per-*transaction* rather than per-byte, which is exactly what
+   losing prefetch would produce on a graph with 20x more epochs.
+2. **Per-epoch cache maintenance.** `--cache-maintenance` is on. If the runtime
+   cleans or invalidates D-cache over each epoch's buffers, the cost is per-epoch
+   and this graph has 628 of them against the AED model's 31.
+3. **Measure it properly rather than infer.** The PMU counter is now wired up
+   (`port_dwt_get_cycles()`); running a graph small enough to finish and printing
+   per-epoch cycles from the epoch callback would separate "each epoch is slow" from
+   "some epochs are very slow".
+
+## Repository state
+
+`LL_ATON_RT_MODE` is restored to `LL_ATON_RT_ASYNC` in the Makefile. The epoch
+trace is now opt-in behind `GATE4_EPOCH_TRACE` — it costs ~14 ms per epoch and
+must be off for any measurement. `board/flash_and_verify.sh` takes the weights base
+as its second argument and sizes the app slot from it, so the 722 kB Citrinet image
+passes the overflow check against a 3 MB slot instead of failing against ST's
+512 kB one.
