@@ -1297,3 +1297,60 @@ would have caught all three:
   Measure the thing itself.
 - **When two measurements of the same quantity disagree, that is the finding.**
   Epochs 0-23 at 0.33 ms and epochs 335-351 at 12.6 ms could not both be right.
+
+---
+
+# Round 17 — the second blocker follows the operator too: `Conv2D_853`
+
+Recompiled the folded full model with `--Omax-ca-pipe 1`, which yields a genuinely
+different schedule — **617 epoch blocks instead of 629**, still 0 software epochs,
+and it moves `Conv2D_853` from epoch 352 to epoch 349. The stall moved with it:
+
+| | 629-epoch schedule | 617-epoch schedule |
+|---|---|---|
+| `Conv2D_853` scheduled at | epoch 352 | epoch 349 |
+| **stalls at** | **352** | **349** |
+| in / out streaming engines | `0x189` / `0x062` | `0x0ca` / `0x031` |
+| epochs completed before it | 351 | 348 |
+
+Same operator, two schedules, two epoch indices, two different engine assignments.
+**The fault follows `Conv2D_853`** — the same conclusion, by the same test, as
+Round 10 reached for `Conv2D_70`.
+
+Timing in this run is again healthy: cumulative 116 ms by epoch 256, individual
+epochs 48,096 to 260,574 cycles.
+
+## What it is not
+
+| candidate | evidence |
+|---|---|
+| operator form | `group=1, k=[1,1], stride=[1,1]`. It is **one of 126 `[256,256,1,1]` pointwise convolutions in this graph; the other 125 execute** |
+| schedule position / epoch index | moved 352 -> 349, stall moved with it |
+| streaming-engine assignment | `out` changed `0x062` -> `0x031`, stall unaffected |
+| memory pool | cpuRAM2 is live only at epochs 11-38, 348-349, 377-380; npuRAM6 otherwise |
+| weight or bias magnitude | `\|w\|max` 1.052 (rank 111 of 126), `\|bias\|max` 0.3496 (rank 61 of 126) — thoroughly ordinary. Median `\|w\|max` across the 126 is 2.325, range 0.553 to 22.21 |
+| the block it sits in | `Reshape -> dw(k=7) -> Q/DQ -> pw(1x1) -> Q/DQ -> Reshape -> Relu -> ...`, and `Conv2D_859`/`Conv2D_862` repeat it identically and complete |
+
+## Next, and it is the obvious remaining variable
+
+The float weights are ordinary, but the **int8 quantisation parameters have not been
+checked**. `q800_real_OE_3_3_1_Q.json` holds the per-tensor and per-channel scales
+and zero points that atonn turns into the accelerator's requantisation multiplier
+and shift. A multiplier or shift at the edge of the representable range is exactly
+the kind of thing that would follow one specific convolution across schedules while
+125 structurally identical ones are fine.
+
+Concretely: pull the input, weight and output scales for `Conv2D_853` and for the
+125 siblings, compute `scale_in * scale_w / scale_out` for each, and see whether
+`Conv2D_853` is an outlier. If it is, the workaround is to nudge that layer's
+quantisation — or to force this one node to software, since the graph currently has
+zero software epochs and could absorb one.
+
+## Gate 4 scoreboard
+
+| | status |
+|---|---|
+| the part executes the graph | **yes** — 0 software epochs, all on-chip, no PSRAM |
+| speed | **as designed** — ~0.2 ms/epoch, cumulative 116 ms by epoch 256 against a 114.7 ms whole-graph estimate |
+| blocker 1: `Conv2D_70`, stride-2 depthwise | **fixed** — fold the stride into the following pointwise conv, bit-exact, free (Round 12) |
+| blocker 2: `Conv2D_853`, plain 1x1 | **open** — localised and schedule-invariant, cause not yet found |
