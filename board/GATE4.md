@@ -864,3 +864,74 @@ It costs 2x the MACs of that one layer (1.28M -> 2.56M, against a graph total in
 the hundreds of millions) and is numerically exact in int8 as long as the
 requantisation parameters are carried over unchanged. Citrinet-256 downsamples 8x
 in total, so the full model has a small number of these to rewrite, not dozens.
+
+---
+
+# Round 11 — PASS. The stride-2 depthwise convolution was the only blocker.
+
+```
+<050f019i008o256>
+<051f019i513o256>
+<052f019i064o016>Ox20# invoke returned
+# invoke 1153851768 cycles
+# ---- run 7 ----
+```
+
+**350 epoch events, 350 completed. `AiDPUProcess()` returns. The loop is on run 7.**
+The NPU executes the whole graph, repeatedly, booted from flash.
+
+## What it took
+
+Two changes, and only two:
+
+1. **Rewrite the stride-2 depthwise convolution.** In `trunc.onnx`,
+   `/encoder/encoder.1/mconv.20/conv/Conv` (`group=256`, `kernel=[3]`,
+   `strides=[2]`) becomes `strides=[1]` followed by
+   `Slice(starts=0, ends=INT64_MAX, axes=[2], steps=[2])`. With `pads=[1,1]`,
+   `k=3`, `L=800` the stride-2 output index *i* is exactly the stride-1 output
+   index *2i* for *i* in 0..399, so the rewrite is a selection, not an
+   approximation. Verified against the original with onnxruntime on three random
+   inputs: **max |diff| = 0, exactly**.
+
+   Note the *other* stride-2 convolution in the graph — `/encoder/encoder.1/res.0.0/conv/Conv`,
+   `group=1`, `kernel=[1]` — was left alone and always worked. So the defect is
+   specific to **stride-2 depthwise**, not to stride 2.
+
+2. **`-DUSE_EXT_SRAM`.** The rewrite roughly doubles the activation footprint (the
+   stride-1 convolution produces an 800-wide tensor where the stride-2 one produced
+   400), and the compiler spilled 800 kB to `hyperRAM` at `0x90000000`.
+   `Ext_Mem_Config()` gates `BSP_XSPI_RAM_Init()` behind `USE_EXT_SRAM`, which the
+   audio application does not define, so that address was never mapped — every
+   write to it raised an imprecise bus error that escalated to HardFault
+   (`CFSR = 0x00000400`, `BFSR.IMPRECISERR`, `HFSR.FORCED`). Defining it
+   initialises the board's APS256 PSRAM and memory-maps the region.
+
+## Sequence of failures, for the record
+
+| build | result |
+|---|---|
+| original graph | NPU stalls forever at the stride-2 depthwise conv |
+| `--Omax-ca-pipe 1` (different schedule) | stalls at the same conv, different epoch index and engines |
+| stride-2 rewritten, PSRAM **not** initialised | clears the conv, then HardFault on the unmapped spill |
+| stride-2 rewritten, PSRAM initialised | **runs to completion, repeatedly** |
+
+## What this is not yet
+
+`# invoke 1153851768 cycles` is not a usable latency figure — `HAS_DWT_CTRL` is 0
+on this part and ST use the PMU instead, so the DWT read in `gate4_canned()` is
+meaningless. But the configuration is slow by construction and must not ship as
+is:
+
+- **800 kB of activations are in PSRAM**, off-chip over xSPI1.
+- **The `Slice` costs 4 software epochs** on the M55, where the graph previously
+  had zero.
+
+Both are consequences of expressing the decimation as a separate node. The next
+step is to fold it into the following pointwise convolution instead — make the
+depthwise `stride=1` and give the **pointwise** `1x1` convolution `stride=2`. That
+is the same selection (everything between them is elementwise, so decimation
+commutes), it removes the `Slice` node entirely, and it uses the operator form
+already proven to work here: `res.0.0` is a `group=1, kernel=1, stride=2`
+convolution that executes correctly in this very graph.
+
+Gate 4's question — *can this part execute this graph* — is answered: **yes.**
