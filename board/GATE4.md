@@ -357,3 +357,132 @@ The remaining suspects are all static and inspectable on the host:
    loop overruns.
 
 All three are host work on artefacts already on disk, and none needs the board.
+
+---
+
+# Round 6 — the boot chain is exonerated by reading its code, and all three suspects are dead
+
+No board time was spent on this round. Everything below comes from artefacts already
+on disk: the two ELFs, the two signed images, and a disassembly of `FSBL/ai_fsbl.hex`.
+
+## Suspect 2 — "the signed image vs what the FSBL expects" — REFUTED
+
+`ai_fsbl.hex` disassembles cleanly. Its loader (`0x34180824`) and its handover
+(`0x3418099c`) are short and unambiguous:
+
+```c
+/* load */
+dst = 0x34000000;                       /* NB: image base, header included   */
+src = flash_base + 0x100000;            /* = 0x70100000, the app slot        */
+n   = *(uint32_t *)(src + 0x6C) + 0x400;/* header length field + header size  */
+for (i = 0; i < n; i++)                 /* byte-by-byte, from memory-mapped   */
+    ((uint8_t *)dst)[i] = ((uint8_t *)src)[i];
+
+/* handover */
+__disable_irq();
+SCB->VTOR = 0x34000400;                 /* payload base = image base + 0x400  */
+entry     = *(uint32_t *)0x34000404;    /* the APP'S VECTOR TABLE, word 1     */
+__set_MSPLIM(0);                        /* cleared, so no stack-limit trap    */
+__set_MSP(*(uint32_t *)0x34000400);     /* MSP = the app's _estack            */
+__set_PRIMASK(primask);
+blx entry;
+```
+
+Three things follow, and they close the question:
+
+- **There is no size cap, no checksum check, and no validation of any kind.** The
+  FSBL copies whatever length the header claims and jumps. It cannot tell our two
+  images apart.
+- **The entry point comes from the app's vector table at `0x34000404`, not from the
+  header field at `0x70`.** That also finally explains Gate 3's `-align` bug
+  properly: without `-align` the payload did not begin at file offset `0x400`, so
+  the copy put the vector table somewhere other than `0x34000400` and the FSBL
+  jumped through garbage. The header entry field was a *symptom* we could check,
+  not the mechanism.
+- **`MSPLIM` is explicitly cleared before `MSP` is set**, so the "FSBL leaves a
+  stack limit armed and the app faults on its first push" theory is dead too.
+
+Both images were measured against this, and both are correct:
+
+| | AED (runs) | Citrinet truncated (silent) |
+|---|---:|---:|
+| header version (`0x68`) | `0x00020300` (v2.3.0) | `0x00020300` |
+| header length (`0x6C`) | `0x0002D5C0` | `0x0002B660` |
+| `.bin` on disk | 185,344 B | 177,312 B |
+| length − payload | 448 | 448 |
+| header entry (`0x70`) | `0x3400F59D` | `0x3400ECA9` |
+| `Reset_Handler` \| 1 | `0x3400F59D` ✓ | `0x3400ECA9` ✓ |
+
+## Suspect 1 — "section layout" — REFUTED
+
+The two ELFs are structurally interchangeable. Nothing lands anywhere unusual, and
+the earlier note that `network.c` contributes ~521 KB of `.rodata` even truncated
+was simply wrong — it is 102 KB, against the AED build's 104 KB.
+
+| section | AED (runs) | Citrinet truncated (silent) |
+|---|---|---|
+| `.isr_vector` | `0x34000400` +0x34C | `0x34000400` +0x34C |
+| `.text` | `0x34000750` +0x12D90 | `0x34000750` +0x112A4 |
+| `.rodata` | `0x340134E0` +0x196E8 | `0x340119F8` +0x18EDC |
+| `.data` | `0x3402CBD8` +0xBEC | `0x3402A8E4` +0xF9C |
+| `.bss` | `0x3402D800` +0xC18 | `0x3402B8A0` +0x5AC |
+| RAM used | 274,456 B (26.20 %) | 264,784 B (25.28 %) |
+
+Both fit inside `0x34000400`–`0x34041000`, a quarter of the region, with the stack
+top at `0x34100000` untouched.
+
+## Suspect 3 — "startup-time initialisers" — REFUTED
+
+`.init_array` holds exactly one entry in **both** builds (`frame_dummy`); there are
+no constructors from `network.c`. The `.data` copy is RAM-to-RAM in this LRUN
+layout (`_sidata == _sdata`), so the copy loop cannot overrun anything.
+
+## And the last model-dependent input before `UART_Config` — also REFUTED
+
+Walking `init_bm()` (`audio_bm.c:104`), exactly one thing that runs before
+`UART_Config()` takes an input that differs between the two builds:
+`MPU_Config()` builds its non-cacheable MPU region from `__snoncacheable` /
+`__enoncacheable`, and that section is **4 bytes in the AED build and 0 bytes in
+the Citrinet build**. A degenerate region is legal Armv8-M, and
+`MPU_ConfigRegion()` (`stm32n6xx_hal_cortex.c:718`) asserts on the region number,
+the permissions and the attribute index — never on base versus limit. It does not
+fire.
+
+Everything else on that path — `HAL_Init`, `SystemClock_Config_Full`,
+`fuse_vddio`, `Int_Mem_Config`, `Ext_Mem_Config`, `NPU_Config`, `IAC_Config`,
+the cache enables — is model-independent code, and `NPU_Config()`
+(`misc_toolbox.c:229`) was read line by line to confirm it never touches the graph.
+
+## Where that leaves it
+
+The boot chain is no longer a suspect; it is *understood*. The Citrinet image is
+loaded to the right address, at the right length, with `VTOR`, `MSPLIM` and `MSP`
+set correctly, and `Reset_Handler` is entered. From there to the first UART byte
+every instruction executed is byte-identical to the AED build that works.
+
+That is a contradiction, and it means one of the two premises is false. The premise
+that has never actually been verified is the *other* one:
+
+> **that the bytes in flash are the bytes we built.**
+
+For every Citrinet attempt the check performed was that `0x70100000` begins
+`53 54 4D 32`. That confirms a header is present. It does not confirm the image is
+intact — and the full Citrinet build (714,560 B) provably overflowed the 512 KB app
+slot at least once, so this flash has held a too-large image at that address.
+
+## Next test — a readback, not a hypothesis
+
+Flash a Citrinet build, then **read the app region back off the board and
+byte-compare it against the signed binary**:
+
+```bash
+STM32_Programmer_CLI -c port=SWD mode=UR --extload <...stldr> \
+                     -r 0x70100000 <size> readback.bin
+cmp readback.bin BuildGCC/BM/GS_Audio_N6_sign.bin
+```
+
+This needs the development switch position and no boot cycle. It is a verification
+of the one link in the chain that has only ever been spot-checked, and either
+outcome is informative: a mismatch explains everything at once, and a match
+eliminates the last mechanical explanation and forces the search into the app's own
+startup with a debugger on the flash-booted part.

@@ -71,3 +71,39 @@ Two things are unverified:
 
 This is upside, not a dependency: **8 s already fits the narrow pool at 42.5 %.**
 Nothing in the current plan needs the wider one.
+
+---
+
+## Correction: cpuRAM2 is not free — the FSBL lives in it
+
+`board/GATE4.md` Round 6 disassembled `FSBL/ai_fsbl.hex`. The FSBL is not a
+transient that vanishes before the application starts: it is loaded into
+**AXISRAM2** and stays there.
+
+| what | address range | source |
+|---|---|---|
+| FSBL image (`.text`/`.rodata`/`.data`) | `0x34180400` – `0x3418F520` | signed header length `0xF2E0` + `0x400`, load base from its vector table |
+| FSBL `.bss` | `0x3418F520` – `0x3418F730` | zero loop at `0x3418F320` |
+| FSBL stack | `0x341FF800` – `0x34200000` | `MSPLIM`/`SP` literals at `0x3418F33C`/`0x3418F340` |
+
+ST's own mpool declares **`cpuRAM2 [0x34100000 – 0x34200000]`** as available for
+weights and activations — the whole megabyte, the FSBL's residency included.
+
+None of ST's shipped models notice, because none of them use cpuRAM2 at all: the
+AED model reports `cpuRAM2: 0 B (0.00 % used)` and places everything in npuRAM6.
+**Ours does.** At 8 s with `--Oauto-sched` the Citrinet activations are 625 KB
+based at `0x34100000`, spanning `0x34100000` – `0x3419C400`, which **overwrites the
+resident FSBL image**. The 45-epoch truncated graph (200 KB, ending `0x34132000`)
+stays clear of it.
+
+This is survivable as things stand — the FSBL has handed over by the time the NPU
+writes, and nothing re-enters it — but it is exactly the kind of overlap that is
+invisible until something does. Two consequences worth carrying forward:
+
+1. **Do not treat cpuRAM2 as a clean megabyte.** The usable part below the FSBL is
+   `0x34100000` – `0x34180000`, i.e. **512 KB**, and the 2 KB stack at the top of
+   the bank is live for as long as the FSBL is.
+2. **It reinforces the case for AXISRAM3/4/5 above.** Those banks are genuinely
+   unclaimed — `Int_Mem_Config()` powers them and nothing else in the boot chain
+   is resident there — which makes them a safer home for activations than the
+   bank ST's mpool nominally offers.
