@@ -486,3 +486,95 @@ of the one link in the chain that has only ever been spot-checked, and either
 outcome is informative: a mismatch explains everything at once, and a match
 eliminates the last mechanical explanation and forces the search into the app's own
 startup with a debugger on the flash-booted part.
+
+---
+
+# Round 7 — ST's boot documentation, and what it does and does not settle
+
+Source: [`Doc/Boot-Overview.md`](https://github.com/STMicroelectronics/STM32N6-GettingStarted-Audio/blob/main/Doc/Boot-Overview.md)
+and `_htmresc/FSBL.png`, plus two files from the same repo that the doc points at.
+
+## It confirms the Round 6 disassembly exactly
+
+ST's own FSBL linker script,
+`Drivers/CMSIS/Device/ST/STM32N6xx/Source/Templates/gcc/linker/STM32N657XX_AXISRAM2_fsbl.ld`:
+
+```
+ROM (xrw) : ORIGIN = 0x34180400, LENGTH = 255K
+RAM (xrw) : ORIGIN = 0x341C0000, LENGTH = 256K
+_estack   = ORIGIN(RAM) + LENGTH(RAM)   /* 0x34200000 */
+_Min_Stack_Size = 0x800                  /* so _sstack = 0x341FF800 */
+```
+
+Every number matches what was read out of the binary in Round 6: image base
+`0x34180400`, stack top `0x34200000`, `MSPLIM` `0x341FF800`. **The FSBL owns
+`0x34180000` – `0x34200000`: the top 512 KB of AXISRAM2.**
+
+And the boot diagram states the copy explicitly: *"1.5MB of User App binary
+(including sign header) is copied from external FLASH to internal SRAM"*, with the
+User App region drawn from `0x34000000` up to `0x34180000` — i.e. the app may grow
+to 1.5 MB, and the ceiling is where the FSBL starts.
+
+## It also confirms the cpuRAM2 defect, and shows it is ST's, not ours
+
+`Doc/Boot-Overview.md` says:
+
+> 1MB of SRAM1 is reserved for the User App … and **1MB of SRAM2 is reserved for
+> the network activations** (see `stm32n6.mpool`).
+
+`Projects/X-CUBE-AI/models/stm32n6.mpool`, shipped, unmodified, ours byte-identical:
+
+```json
+{ "fname": "AXISRAM2", "name": "cpuRAM2",
+  "offset": { "value": "0x34100000" }, "size": { "value": "1024", "magnitude": "KBYTES" } }
+```
+
+**1024 KB starting at `0x34100000` runs to `0x34200000` — straight through the
+FSBL.** The documentation and the mpool agree with each other and both are wrong
+by 512 KB. It never fires for ST because none of their models allocate in cpuRAM2
+at all (the AED model: `cpuRAM2: 0 B, 0.00 % used`). The usable part is
+`0x34100000` – `0x34180000`, **512 KB**.
+
+Our 8 s Citrinet at 625 KB of activations is the first thing in this project large
+enough to cross that line.
+
+## What it does not explain
+
+The **truncated** graph allocates 200 KB, `0x34100000` – `0x34132000`, nowhere near
+the FSBL — and it is silent too. So this is a real constraint on the full model and
+a real bug to report upstream, but it is not the Gate 4 fault.
+
+## Two things eliminated on the way
+
+- **The FSBL is not out of date.** `FSBL/ai_fsbl.hex` here is md5
+  `652478c952cb1a7a95e7b6c80f862433`, byte-identical to upstream `main`, which is
+  v1.4.0 / November 2025 — the newest there is.
+- **`BOOT_GetApplicationSize()` is a known-fragile spot but is behaving.** The
+  v1.4.0 release note records that ST had to re-append this function by hand
+  "*to return correct size for a boot header v2.3*". Round 6 disassembled what
+  they wrote — `*(uint32_t *)(hdr + 0x6C) + 0x400` — and it over-copies by exactly
+  448 bytes for every image, ours and ST's alike, because the signing tool writes
+  `payload + 448` into the length field. Those 448 bytes land in `.bss` and are
+  zeroed moments later by `Reset_Handler`. Systematic, and harmless in both builds.
+
+## So the next step is to look, not to deduce
+
+Six rounds of elimination have exhausted what can be inferred. Everything from the
+FSBL's jump to the first UART byte is now byte-identical between a build that
+works and a build that does not, which means the remaining information is only
+obtainable from the part itself, in the state that fails.
+
+**Attach a debugger to the flash-booted board and read the program counter.**
+`mode=UR` is the connection that works here (`GATE3.md`), and it resets into the
+same flash boot. Halt, then read `PC`, `LR`, `xPSR` and the fault registers
+`CFSR` / `HFSR` / `MMFAR` / `BFAR`. That distinguishes, in one shot and with no
+further guessing, between:
+
+- `HardFault_Handler` / `Error_Handler` / an `assert_failed()` loop — the address
+  says which, and `MMFAR`/`BFAR` say what it touched;
+- spinning somewhere in `init_bm()` before `UART_Config`;
+- running normally, in which case the fault is the UART or the bench, not the app.
+
+`board/flash_and_verify.sh` covers the other unverified link in the same session:
+it reads the app region back off the flash and byte-compares it against the signed
+binary, which has never been done for a Citrinet build.
