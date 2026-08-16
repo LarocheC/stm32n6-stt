@@ -774,3 +774,93 @@ and the same operator class completes 31 times before it. Options, cheapest firs
 3. **Bisect the graph around node 70.** The truncation point is already a tool we
    have: cutting just before `Conv2D_70` should run clean, and just after should
    hang, which isolates the operator exactly.
+
+---
+
+# Round 10 — it is the stride-2 convolution, and it follows the operator across schedules
+
+## The controlled comparison
+
+Recompiling with `--Omax-ca-pipe 1` produces a **different schedule** — 44 epochs
+instead of 45, still 0 software epochs, same memory, same weights size — and moves
+`Conv2D_70` from epoch 32 to epoch 31. The hang moves with it:
+
+| | `--Omax-ca-pipe 4` (45 epochs) | `--Omax-ca-pipe 1` (44 epochs) |
+|---|---|---|
+| `Conv2D_70` scheduled at | epoch 32 | epoch 31 |
+| **hangs at** | **epoch 32** | **epoch 31** |
+| in / out streaming engines | `0x90` / `0x01` | `0x84` / `0x10` |
+| epochs completed before it | 31 | 30 |
+
+Two schedules, two different epoch numbers, two different streaming-engine
+assignments, one operator. **The fault is a property of `Conv2D_70`, not of the
+schedule, the epoch index, or any particular streaming engine.**
+
+## What is special about Conv2D_70
+
+Nothing, except its stride. The graph contains a run of structurally identical
+depthwise convolutions, all with inflated weights of shape `[256,4,3,1]`, 3,072 B:
+
+| conv | epoch | in | out | |
+|---|---:|---:|---:|---|
+| `Conv2D_34` | 12 | 204,800 | 204,800 | stride 1 — completes |
+| `Conv2D_43` | 17 | 204,800 | 204,800 | stride 1 — completes |
+| `Conv2D_52` | 22 | 204,800 | 204,800 | stride 1 — completes |
+| `Conv2D_61` | 27 | 204,800 | 204,800 | stride 1 — completes |
+| **`Conv2D_70`** | **32** | **204,800** | **102,400** | **stride 2 — HANGS** |
+| `Conv2D_98` | 40 | 102,400 | 102,400 | (never reached) |
+
+`Conv2D_70` is the **first convolution in the graph that halves the time axis**,
+`[1,256,800,1]` → `[1,256,400,1]`, 1,280,000 MACs, weights from octoFlash +524,544.
+Four instances of the same operator with the same weight geometry complete
+immediately before it. The only difference is the stride.
+
+## Compiler options do not avoid it
+
+All four option sets produce the same 45-epoch, 0-software-epoch graph and all
+contain the stride-2 epoch:
+
+| variant | epochs | SW | cpuRAM2 | flash |
+|---|---:|---:|---:|---:|
+| ST's options + `--Oauto-sched` (shipping choice) | 45 | 0 | 200 kB | 540 kB |
+| without `--Oauto-sched` | 45 | 0 | 500 kB | 540 kB |
+| `--Omax-ca-pipe 1` | 44 | 0 | 200 kB | 540 kB |
+| without `--Ocache-opt` | 45 | 0 | 200 kB | 540 kB |
+
+> **Correction to `compile/DECISION-oauto-sched.md`.** An earlier run of this sweep
+> reported that dropping `--Oauto-sched` collapsed the graph to 84 epochs with 57
+> software epochs. That was wrong: the already-preprocessed `*_OE_3_3_1.onnx` had
+> been fed back into `stedgeai generate`, which preprocessed it a second time. A
+> control run against the known-good configuration caught it. `--Oauto-sched` is
+> still the right choice, but only because it halves cpuRAM2 occupancy (200 kB vs
+> 500 kB) — not because it avoids software epochs.
+
+`--d-dead` (the compiler's own "epoch deadlock analysis and removal" debug level)
+reports nothing for this graph at level 9.
+
+## The reproducer
+
+Everything needed to report this upstream is on disk and small:
+
+- `scratchpad/trunc.onnx` (622,844 B) — a 138-node prefix of
+  `stt_en_citrinet_256_gamma_0_25`, int8, cut so the failure is reached in 45 epochs
+- ST Edge AI Core 4.0.1, `stm32n6.mpool` unmodified, options as shipped
+- STM32N6570-DK, boot from flash, ll_aton `v1.1.3-71120109`
+- symptom: `LL_ATON_RT_RunEpochBlock()` returns `LL_ATON_RT_WFE` forever at the
+  epoch containing the first stride-2 depthwise convolution; no fault, no
+  interrupt, no illegal access
+
+## Workaround to try next
+
+A stride-2 convolution is exactly a stride-1 convolution followed by taking every
+other column, provided the padding is unchanged — so the graph can be rewritten to
+use only the operator form that is known to work here:
+
+```
+Conv(stride=2)  ->  Conv(stride=1) + Slice(starts=0, steps=2, axis=time)
+```
+
+It costs 2x the MACs of that one layer (1.28M -> 2.56M, against a graph total in
+the hundreds of millions) and is numerically exact in int8 as long as the
+requantisation parameters are carried over unchanged. Citrinet-256 downsamples 8x
+in total, so the full model has a small number of these to rewrite, not dozens.
