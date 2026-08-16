@@ -1150,3 +1150,77 @@ Two things worth carrying into that:
   anything else.
 - **Epoch 7 at 25x** the estimate is unexplained and worth a look once the stall is
   resolved.
+
+---
+
+# Round 15 — epoch 352 hangs, and something turns pathological around epoch 321
+
+Windowed tracing (silent below epoch 335, every epoch above it) on the folded full
+model, booted from flash:
+
+```
+<351f019i008o032>07550957      ends,  12.58 ms
+<352f019i393o098               starts, and that is the last byte the board sends
+```
+
+## Two distinct findings
+
+### 1. Epoch 352 never ends
+
+`flags = 0x13` (`epoch_start | epoch_end | pure_hw`), input streaming engines
+`0x189` (0,3,7,8), output engines `0x062` (1,5,6). It produces
+`Conv2D_853_off_bias_out_976`, `[1,256,200,1]`, 51,200 B in npuRAM6.
+
+`Conv2D_853` is **the most ordinary operator in the graph**:
+
+```
+op=Conv  group=1  kernel_shape=[1,1]  strides=[1,1]  pads=[0,0,0,0]  dilations=[1,1]
+```
+
+A plain pointwise convolution, hundreds of which complete earlier. Unlike the first
+blocker (`Conv2D_70`, stride-2 depthwise) there is nothing unusual about the
+operator form, so the stride-2 explanation does not transfer.
+
+### 2. Every epoch from ~321 onward costs a uniform ~12.6 ms
+
+| region | per-epoch cost | vs compiler estimate |
+|---|---:|---|
+| epochs 0-320 | ~0.33 ms (106 ms cumulative) | ~1x |
+| epochs 335-351 | **7,524,635 - 7,676,945 cycles**, i.e. 12.54 - 12.79 ms | ~40x |
+
+The spread across those seventeen epochs is **±1 %**, over different operators,
+different tensor sizes and different streaming-engine assignments. A constant that
+stable is not computation — it is a fixed wait, most likely a timeout being hit and
+retried once per epoch. At epoch 352 the same condition apparently becomes
+terminal.
+
+## Ruled out for this region
+
+| candidate | evidence |
+|---|---|
+| cpuRAM2 / AXISRAM2 access | cpuRAM2 is only live at epochs 11-38, 348-349 and 377-380. Epoch 352 does not touch it, and epochs 11-38 ran at full speed |
+| number of streaming engines | epoch 346 waits on three output engines (`0x0c4`) and completes in 7,676,945 cycles — indistinguishable from the single-engine epochs. Popcount 1/2/3 means: 7,663,590 / 7,662,956 / 7,676,945 |
+| the operator form | `Conv2D_853` is `group=1, k=[1,1], stride=[1,1]` |
+| the trace overhead | the printing is ~14 ms per traced epoch but epochs 0-320 are untraced and fast, and the cumulative counter excludes print time |
+
+## Where to look next
+
+1. **Find where the step change begins.** Re-run with the window opening at epoch
+   ~280 instead of 335. Cumulative time is 106 ms at epoch 320 and the penalty is
+   in force by 335, so the transition is inside a 15-epoch span. Whatever changes
+   there — a pool crossing, a weight-streaming boundary, a different accelerator
+   configuration — is the thing to look at.
+2. **Identify the 12.6 ms constant.** 7.55M cycles at 600 MHz CPU / 9.4 ms at
+   800 MHz NPU. If a runtime or ATON timeout has that period, that names the
+   mechanism directly.
+3. **Epoch 7 at 25x** (5,077,147 cycles against a 204,800 estimate) is a smaller
+   instance of the same kind of anomaly in the fast region and may share a cause.
+
+## Where Gate 4 stands
+
+- The graph **executes**: 0 software epochs, everything on-chip, no PSRAM, weights
+  at `0x70400000`, and epochs 0-320 run at the compiler's estimated speed.
+- The stride-2 depthwise fold is **correct and free** (Round 12) and applies to all
+  three occurrences in the full model, bit-exact.
+- Two problems remain, and they may be the same problem: a uniform ~40x per-epoch
+  penalty from around epoch 321, and a hard stall at epoch 352.
