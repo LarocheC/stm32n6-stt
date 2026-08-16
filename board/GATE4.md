@@ -295,3 +295,65 @@ app should land **under 512 KB**. Flash it with weights at `0x70400000` and boot
   Citrinet graph itself or the relocated weight base.
 
 Either way it is one build and one boot cycle, and it discriminates.
+
+---
+
+# Round 5 — isolated: the Citrinet graph, and it dies before `main`'s first print
+
+Four more single-variable tests, all from flash boot:
+
+| build | app | weights | result |
+|---|---:|---|---|
+| ST AED model, ST's unmodified app | 243 KB | `0x70180000` | **runs** |
+| Citrinet full, our harness | 714 KB | `0x70400000` | silent |
+| Citrinet truncated (45 ep), our harness | 178 KB | `0x70400000` | silent |
+| Citrinet truncated (45 ep), our harness | 178 KB | **`0x70180000`** | silent |
+| **ST AED model, our harness** | **186 KB** | `0x70180000` | **runs** |
+
+```
+# ---- run 7 ----
+# fed 6144 B input
+# invoke returned
+# output too small for CTC argmax (control run)
+```
+
+## What is now eliminated
+
+App size (714 KB → 178 KB, and AED runs at a *larger* 186 KB), the relocated weight
+base, epoch count, RAM occupancy, the middleware upgrade, every vendor patch, the
+`GATE4_CANNED` harness itself, and the board. The harness runs ST's graph
+perfectly, including a completed NPU inference.
+
+**The variable is the Citrinet network, and nothing else.**
+
+## The important detail
+
+The Citrinet builds emit **not one byte** — not even
+`# gate4: canned features, mic bypassed`, which is the first statement of
+`gate4_canned()` and runs long before `AiDPULoadModel()`. `UART_Config()` is
+`audio_bm.c:122`, earlier still.
+
+So the Citrinet image fails **before `UART_Config`** — in early init, in startup,
+or in the FSBL's load of the image. That is not an NPU fault and not a runtime
+fault. It is the image failing to come up at all, and it happens with a 178 KB
+Citrinet image while a 186 KB AED image on the same addresses boots fine.
+
+Under gdb the same image *does* boot and *does* execute epochs, because gdb loads
+sections directly and never involves the FSBL. That is the whole difference.
+
+## Where to look next (no more bisection by power cycle)
+
+The remaining suspects are all static and inspectable on the host:
+
+1. **Section layout.** Diff the two link maps. Citrinet's `network.c` contributes
+   ~521 KB of `.rodata` even truncated; check for a section landing somewhere the
+   FSBL's own copy or stack occupies, or a `.data` region the startup code copies
+   over itself.
+2. **The signed image vs what the FSBL expects.** Compare the two headers field by
+   field, especially the length, and confirm the FSBL honours it rather than a
+   fixed size.
+3. **Startup-time initialisers.** Whether `network.c` introduces anything running
+   before `main` — constructors, or a `.data` block large enough that the copy
+   loop overruns.
+
+All three are host work on artefacts already on disk, and none needs the board.
