@@ -176,3 +176,60 @@ control flow, useless for throughput — which is worth knowing on its own.
    timing and move the Gate 4 measurement to flash boot permanently.
 3. If it also stalls from flash, the hypothesis is wrong and the next suspect is
    the xSPI configuration itself rather than who performed it.
+
+---
+
+# Round 3 — RAM pressure refuted; the two boot paths disagree
+
+Two more changes, both sound in themselves, neither of which produced output:
+
+- **The inference now loops** every 3 s with a run counter. This was forced by a
+  measured fact, not a guess: the catcher logged the USB port lost at 98.5 s and
+  reopened at **106.3 s**, a 7.8 s re-enumeration gap under usbipd. A one-shot
+  print at power-on is unobservable on this bench no matter how the host is
+  arranged, so every earlier "0 bytes from flash" reading was uninterpretable.
+- **RAM went 99.04 % → 73.46 %** by dropping `AudioBM_proc_t` from the
+  `GATE4_CANNED` path — 269 KB of capture, preprocessing and playback state this
+  path never touches. The suspicion was that at 99 % of a 1023 KB region there
+  was no headroom for the FSBL's own copy and stack, where Gate 3's *working*
+  flash boot sat at 57.62 %.
+
+**Result: still not one byte from flash boot**, with the loop running and 26 % of
+RAM free. RAM pressure is refuted as the explanation.
+
+## The state worth recording
+
+The same image behaves differently under the two boot paths:
+
+| | under gdb (dev mode) | booted from flash |
+|---|---|---|
+| reaches `UART_Config` | yes | **no output at all** |
+| prints its header | yes | — |
+| loads the model | yes, `DPU_OK` | — |
+| executes epoch blocks | yes, verified by backtrace | — |
+| completes an inference | no — minutes, not ms | — |
+
+Under gdb it runs and is pathologically slow. From flash it is silent from the
+first instruction that would print. Those are two different failures, and the
+second is not explained by anything tested so far.
+
+## Recommended next step, and it is not another power cycle
+
+Every hypothesis so far has been tested by changing *our* build and asking for a
+boot-switch cycle. That loop has now cost far more than it has returned. The
+experiment that actually discriminates is a **known-good control on our own
+runtime**:
+
+Regenerate ST's AED model with ST Edge AI Core 4.0.1 (the version our middleware
+now requires) and run *their* unmodified application. That separates three things
+a single test:
+
+- if ST's app runs from flash on our runtime → our graph or our app changes are at
+  fault, and the difference is bisectable on the host;
+- if ST's app is also silent from flash → the middleware upgrade or the relocated
+  flash layout broke the boot path, independent of our model;
+- if ST's app runs *fast* under gdb → the "no FSBL, slow xSPI" theory for the
+  gdb slowness is wrong too.
+
+This is host work plus one flip, and it is the first test in this gate whose every
+outcome is informative.
