@@ -687,3 +687,90 @@ that context.
 That is one build and one boot cycle, and it converts "the graph hangs" into
 "epoch N, on streaming engine M" — which is both actionable here and reportable
 upstream.
+
+---
+
+# Round 9 — the hang is epoch 32 of 45, and it is waiting on a streaming engine
+
+Per-epoch tracing now works on the flash-booted board. Epochs **1 to 31 start and
+complete normally. Epoch 32 starts and never ends.**
+
+```
+<029f019i064o008>
+<030f019i064o008>
+<031f019i512o004>      <- ends
+<032f019i144o001       <- starts, and that is the last byte the board ever sends
+```
+
+Format is `<`epoch `f`flags `i`in_streng_mask `o`out_streng_mask, decimal, with `>`
+on completion.
+
+## Epoch 32
+
+| | |
+|---|---|
+| flags | `19` = `0x13` = `epoch_start \| epoch_end \| pure_hw` |
+| input streaming engines | `144` = `0x90` — engines 4 and 7 |
+| output streaming engine | `1` = `0x01` — engine 0 |
+| operator | `Conv2D_70` |
+| reads | `Reshape_69_out_0_inserted_out434`, npuRAM6 +204,800, 204,800 B, live 31..32 |
+| writes | `Conv2D_70_off_bias_out_82`, npuRAM6 +0, 102,400 B, `[1,256,400,1]` int8, live 32..33 |
+
+The epoch's completion condition is that its output streaming engines signal. Engine
+0 never does, so `LL_ATON_RT_RunEpochBlock()` keeps returning `LL_ATON_RT_WFE` and
+the sync loop never leaves.
+
+## What this is not
+
+- **Not an allocation overrun.** Highest buffer end in npuRAM6 is 422,400 B of a
+  458,752 B pool; in cpuRAM2, 204,800 B of 1,048,576 B. Both fit.
+- **Not AXISRAM2.** Only two buffers ever live in cpuRAM2 —
+  `Conv2D_30_off_bias_out_28` (epochs 11..12) and `Reshape_33_out_0` (epochs
+  12..38) — and epoch 32 reads and writes npuRAM6 only. Epochs 12 through 31 span
+  the same cpuRAM2 residency and complete fine.
+- **Not streaming engine 0 being unusable.** Epochs 7 and 8 both drive
+  `out_streng = 0x01` and complete.
+- **Not a trapped interrupt or a fault** (Round 8), **not the firewall** (Round 8),
+  **not the flash contents** (Round 8), **not the boot chain** (Rounds 6-7).
+
+## A middleware defect found on the way
+
+The first attempt at this traced nothing, and the reason is a real bug in the
+shipped middleware rather than in the instrumentation.
+`__ll_aton_stai_run()` (`ll_aton_stai_internal.c:417-425`) rewrites the epoch
+callback on **every** run:
+
+```c
+if (nn_context->callback != NULL)
+  LL_ATON_RT_SetNetworkCallback(inst, _stai_aton_internal_epoch_block_callback);
+else
+  LL_ATON_RT_SetNetworkCallback(inst, NULL);   /* <- silently discards the user's */
+```
+
+and `_stai_aton_context.callback` **is never assigned anywhere in the middleware**.
+There is no public per-network setter — `stai_runtime_set_callback()` feeds a
+different, runtime-wide hook. So `LL_ATON_RT_SetNetworkCallback()`, which
+`ll_aton_rt_user_api.h` documents as the way to trace epochs, cannot work through
+the stai layer at all: whatever you register is set to `NULL` before the first
+epoch runs.
+
+Working around it means writing `_stai_aton_context.callback` directly, which is
+what this build does. Worth reporting upstream alongside the cpuRAM2/FSBL overlap
+from Round 7.
+
+## Where to take it
+
+The question is now narrow and mechanical: why does output streaming engine 0 not
+raise completion for `Conv2D_70`, when the same engine completes for epochs 7 and 8
+and the same operator class completes 31 times before it. Options, cheapest first:
+
+1. **Read the ATON streaming-engine and CA registers while hung.** The beacon can
+   dump `ATON_STRENG*_CTRL/STATUS` and the convolutional accelerator status from
+   inside the WFE loop — no debugger needed, and it says whether the engine is
+   busy, idle, or errored.
+2. **Recompile without `--Oauto-sched`.** ST's plain option set schedules
+   differently; if the hang moves or disappears, it is a scheduling artefact
+   rather than a property of the operator.
+3. **Bisect the graph around node 70.** The truncation point is already a tool we
+   have: cutting just before `Conv2D_70` should run clean, and just after should
+   hang, which isolates the operator exactly.
