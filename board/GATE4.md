@@ -1072,3 +1072,81 @@ must be off for any measurement. `board/flash_and_verify.sh` takes the weights b
 as its second argument and sizes the app slot from it, so the 722 kB Citrinet image
 passes the overflow check against a 3 MB slot instead of failing against ST's
 512 kB one.
+
+---
+
+# Round 14 — the NPU is fast. There is a second blocker, around epoch 353.
+
+## Correction to Round 13
+
+Round 13 said throughput was "~2000x off, and not yet explained". **That was wrong,
+and the error was mine.** It divided wall-clock by epoch count. The wall clock was
+dominated by this build's own instrumentation: `BEACON(c)` holds each marker for
+20 x `HAL_Delay(100)` = 2 s, and `init_bm()` emits about sixteen of them, so
+**roughly 32 seconds elapse before the invoke is even entered.**
+
+Measuring the epochs directly with the PMU says the opposite:
+
+| epoch | measured cycles | compiler estimate | ratio |
+|---:|---:|---:|---:|
+| 0-6 | 21,891 - 263,218 | 49,152 - 256,000 | **1x** |
+| **7** | **5,077,147** | 204,800 | **25x** |
+| 8-23 | 157,003 - 670,867 | 204,800 - 819,200 | **1x** |
+
+and the cumulative total across the graph:
+
+```
+epoch     0    32    64    96   128   160   192   224   256   288   320
+cum ms    0    20    35    46    57    68    79    86    92    98   106
+```
+
+**106 ms of NPU time by epoch 320**, growing 6-11 ms per 32 epochs — extrapolating
+to roughly 200 ms for all 628, against the compiler's 114.7 ms estimate from
+`c_info.json`. The NPU is performing as designed. Epoch 7 at 25x is the only
+outlier and costs 8.5 ms.
+
+So the eliminations in Round 13 (async wait mode, NPU cache, software fallback,
+xSPI2 prefetch) were all answering a question that was not being asked. The
+prefetch test in particular was run against a symptom that did not exist.
+
+## What is actually wrong
+
+The stream ends at `E320t000106` and then goes silent for the remaining ~200 s of
+the capture. The earlier full-trace run reached epoch 354. **The full graph stalls
+at approximately epoch 353**, in the same manner as the original stride-2 stall:
+an epoch starts and never ends, with no fault and no trapped interrupt.
+
+The 45-epoch truncated graph could never have shown this — it stops at epoch 45.
+Folding the three stride-2 depthwise convolutions removed the *first* blocker; this
+is a second, further in.
+
+Epochs 350-361 are a repeating block:
+
+```
+ep 350..377  Reshape_849_out_0            [1,256,200]      51,200 B
+ep 351..352  Conv2D_850_off_bias_out_970  [1,256,200,1]    51,200 B
+ep 352..353  Conv2D_853_off_bias_out_976  [1,256,200,1]    51,200 B
+ep 353..354  Reshape_856_out_0            [1,256,200]      51,200 B
+ep 354..356  ____4812 / ____4808 / ____4811  three temporaries, 102,400 B each
+ep 356..357  Conv2D_859_off_bias_out_982  [1,256,200,1]    51,200 B
+```
+
+The identical block at epochs 344-347 completes, so the shape is not by itself the
+problem.
+
+## Next step, and it is the same method that worked before
+
+Round 9 localised the first blocker by tracing every epoch. Do the same in a
+window: print per-epoch identity and cycles only for epochs >= 340, so the UART
+cost does not distort the measurement and the trace does not stop before reaching
+the interesting region. Then read the stalling epoch's operator, flags and
+streaming-engine masks out of `c_info.json` exactly as in Rounds 9-10, and check
+whether it is another operator form the accelerator mishandles.
+
+Two things worth carrying into that:
+
+- **`BEACON()` must be shortened or disabled** for any timed run. Two seconds per
+  marker is right for catching a boot that dies early and completely wrong for
+  anything else.
+- **Epoch 7 at 25x** the estimate is unexplained and worth a look once the stall is
+  resolved.
