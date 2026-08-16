@@ -233,3 +233,65 @@ a single test:
 
 This is host work plus one flip, and it is the first test in this gate whose every
 outcome is informative.
+
+---
+
+# Round 4 — the AED control PASSES, and that narrows it sharply
+
+ST's `yamnet_1024_64x96_tl_qdq_int8.onnx` regenerated with **ST Edge AI Core
+4.0.1** (31 epochs, 3,282,785 B of weights — the same size as their shipped blob),
+installed into their **unmodified** application, ST's original mpool with weights
+back at `0x70180000`, ST's option string, ST's heap restored. Links at
+**57.62 % RAM — identical to the Gate 3 build that booted successfully.**
+
+Booted from flash, it runs:
+
+```
+| 110     |  2.07%|  0.88|  1.19|  0.00|
+```
+
+## What this exonerates
+
+| | verdict |
+|---|---|
+| the board and the boot chain | **fine** |
+| the ll_aton 262 → 275 middleware upgrade | **fine** |
+| our vendor patches (`ai_dpu.c`, `cpu_stats.c`, Makefile, linker script) | **fine** |
+| our build / sign / flash procedure | **fine** |
+
+Every global change this project made to ST's package is cleared. The fault is
+specific to the Citrinet configuration.
+
+## The suspect that now stands out
+
+| | AED control (works) | Citrinet (silent from flash) |
+|---|---:|---:|
+| signed app size | **243,296 B** | **714,560 B** |
+| app slot ST designed for | 512 KB | 512 KB |
+| weights base | `0x70180000` | `0x70400000` |
+| epochs | 31 | 628 |
+| RAM | 57.62 % | 73.46 % |
+
+**Our application is 714 KB against a 512 KB slot.** Moving the weight blob to
+`0x70400000` made room in the *address map*, but nothing has ever verified that
+the **FSBL will load an SSBL larger than 512 KB**. It reads the image length from
+the signed header, but a ceiling — or a layout assumption baked into `ai_fsbl.hex`
+— produces precisely the observed signature: correct under gdb, which loads
+sections directly and never involves the FSBL, and silent from flash at any epoch
+count, any weight volume, and any RAM occupancy.
+
+This also retro-explains round 2: the 45-epoch truncated graph was only ever run
+*under gdb*, never from flash, so it never tested this.
+
+## Next test, and it is cheap
+
+Build the **truncated** Citrinet (45 epochs) with `GATE4_CANNED`. Its `network.c`
+is a fraction of the full one and the image linked at 47.72 % RAM, so the signed
+app should land **under 512 KB**. Flash it with weights at `0x70400000` and boot.
+
+- **prints** → app size is the blocker, and the fix is a bigger app slot (move the
+  weights further out and confirm the FSBL follows the header) or a smaller image.
+- **silent** → app size is not it either, and the remaining difference is the
+  Citrinet graph itself or the relocated weight base.
+
+Either way it is one build and one boot cycle, and it discriminates.
