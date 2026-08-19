@@ -35,6 +35,64 @@ index 3c5cd91..a751b53 100644
    AudioPreProcCtx_t audioPreCtx;
    AudioPostProcCtx_t audioPostCtx;
  #if (CTRL_X_CUBE_AI_AUDIO_OUT==COM_TYPE_HEADSET)
+diff --git a/Projects/GS/Inc/stm32n6570_discovery_conf.h b/Projects/GS/Inc/stm32n6570_discovery_conf.h
+index 84ff53b..8b943ea 100644
+--- a/Projects/GS/Inc/stm32n6570_discovery_conf.h
++++ b/Projects/GS/Inc/stm32n6570_discovery_conf.h
+@@ -64,8 +64,19 @@ extern "C" {
+        e.g. LL_MEM_EnableClock(LL_MEM_AXISRAMi);
+    2/ to clear the shutdown bit SRAMSD of RAMCFG_AXISRAMxCR register
+ */
+-#define LCD_LAYER_0_ADDRESS                 0x34000000 /* SRAM1 */
+-#define LCD_LAYER_1_ADDRESS                 0x340C0000 /* SRAM1 */
++/* stm32n6-stt Gate 7. The stock values are actively dangerous here:
++ * BSP_LCD_InitEx() programs layer 0 at LCD_LAYER_0_ADDRESS before the
++ * application can call BSP_LCD_ConfigLayer() (stm32n6570_discovery_lcd.c:293),
++ * and 0x34000000 is 1 KiB below this app's own ORIGIN = 0x34000400 while
++ * 0x340C0000 sits squarely inside its .text -- the LTDC would DMA-scan the
++ * application's code as pixels for the window between the two calls. Reads
++ * only, so nothing corrupts, but it is bus traffic and visible garbage.
++ * Point it at the real framebuffer instead. AXISRAM3/4/5 are contiguous
++ * (0x34200000..0x34350000, 3 x 448 K) and the mpool claims none of them; ST's
++ * own ObjectDetection app puts its layer 0 at 0x34200000 too, which is the
++ * evidence that the LTDC master can reach AXISRAM at all. */
++#define LCD_LAYER_0_ADDRESS                 0x34200000 /* AXISRAM3, 800x480x2 */
++#define LCD_LAYER_1_ADDRESS                 0x34200000 /* unused: one layer   */
+ 
+ 
+ /* Audio codec defines */
+diff --git a/Projects/GS/Inc/stm32n6xx_hal_conf.h b/Projects/GS/Inc/stm32n6xx_hal_conf.h
+index 0915b31..4ed75ab 100644
+--- a/Projects/GS/Inc/stm32n6xx_hal_conf.h
++++ b/Projects/GS/Inc/stm32n6xx_hal_conf.h
+@@ -44,8 +44,12 @@ extern "C" {
+ #define HAL_DCMI_MODULE_ENABLED
+ #define HAL_DCMIPP_MODULE_ENABLED */
+ #define HAL_DMA_MODULE_ENABLED
+-/* #define HAL_DMA2D_MODULE_ENABLED
+-#define HAL_DTS_MODULE_ENABLED
++#define HAL_DMA2D_MODULE_ENABLED   /* stm32n6-stt Gate 7: stm32n6570_discovery_lcd.c
++                                    * references DMA2D 59 times, and the HAL .c files
++                                    * self-guard on these macros -- so leaving this
++                                    * commented out fails at LINK time with undefined
++                                    * HAL_DMA2D_*, not at compile time. */
++/* #define HAL_DTS_MODULE_ENABLED
+ #define HAL_ETH_MODULE_ENABLED */
+ #define HAL_EXTI_MODULE_ENABLED
+ /* #define HAL_FDCAN_MODULE_ENABLED
+@@ -60,9 +64,9 @@ extern "C" {
+ #define HAL_IRDA_MODULE_ENABLED
+ #define HAL_IWDG_MODULE_ENABLED
+ #define HAL_JPEG_MODULE_ENABLED
+-#define HAL_LPTIM_MODULE_ENABLED
+-#define HAL_LTDC_MODULE_ENABLED
+-#define HAL_MCE_MODULE_ENABLED */
++#define HAL_LPTIM_MODULE_ENABLED */
++#define HAL_LTDC_MODULE_ENABLED    /* stm32n6-stt Gate 7 */
++/* #define HAL_MCE_MODULE_ENABLED */
+ #define HAL_MDF_MODULE_ENABLED
+ /* #define HAL_MMC_MODULE_ENABLED
+ #define HAL_NAND_MODULE_ENABLED
 diff --git a/Projects/GS/Makefile b/Projects/GS/Makefile
 index d4ebc45..8162f80 100644
 --- a/Projects/GS/Makefile
@@ -73,10 +131,10 @@ index d4ebc45..8162f80 100644
  LD_FLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS)
  LD_FLAGS += -Wl,--cref -Wl,--gc-sections
 diff --git a/Projects/GS/Src/audio_bm.c b/Projects/GS/Src/audio_bm.c
-index 8e3d175..719e05f 100644
+index 8e3d175..c688f00 100644
 --- a/Projects/GS/Src/audio_bm.c
 +++ b/Projects/GS/Src/audio_bm.c
-@@ -34,6 +34,24 @@
+@@ -34,6 +34,30 @@
  #include "AudioCapture_ring_buff.h"
  #include "preproc_dpu.h"                           /* Preprocessing includes  */
  #include "postproc_dpu.h"                          /* Postprocessing includes */
@@ -93,6 +151,12 @@ index 8e3d175..719e05f 100644
 +#include "citrinet_fe.h"
 +#include "citrinet_ctc.h"
 +#endif
++#ifdef GATE7_LCD
++#include <stdio.h>
++#include "stm32n6570_discovery_lcd.h"
++#include "stm32_lcd.h"
++#include "stm32_lcd_ex.h"
++#endif
 +#ifdef GATE4_BEACON
 +#include "ll_aton_NN_interface.h"
 +#include "ll_aton_rt_user_api.h"
@@ -101,7 +165,7 @@ index 8e3d175..719e05f 100644
  #include "ai_dpu.h"                                /* AI includes             */
  #include "test.h"
  #include "audio_bm.h"
-@@ -72,8 +90,15 @@ static bool AudioProcIsOn;
+@@ -72,8 +96,15 @@ static bool AudioProcIsOn;
  
  #ifdef APP_BARE_METAL
  static AudioBM_acq_t  audio_acq_ctx;
@@ -117,7 +181,7 @@ index 8e3d175..719e05f 100644
  #if (CTRL_X_CUBE_AI_AUDIO_OUT==COM_TYPE_HEADSET)
  int16_t  playback_buf[PLAYBACK_BUFFER_SIZE] __NON_CACHEABLE;
  #endif
-@@ -87,6 +112,133 @@ static const char *sAiAudioClassLabels[CTRL_X_CUBE_AI_MODEL_CLASS_NUMBER] = \
+@@ -87,6 +118,133 @@ static const char *sAiAudioClassLabels[CTRL_X_CUBE_AI_MODEL_CLASS_NUMBER] = \
    * @param  None
    * @retval None
    */
@@ -251,7 +315,7 @@ index 8e3d175..719e05f 100644
  void init_bm(void)
  {
    /* Power on ICACHE */
-@@ -96,6 +248,19 @@ void init_bm(void)
+@@ -96,6 +254,19 @@ void init_bm(void)
    __HAL_RCC_CPUCLK_CONFIG(RCC_CPUCLKSOURCE_HSI);
    __HAL_RCC_SYSCLK_CONFIG(RCC_SYSCLKSOURCE_HSI);
  
@@ -271,7 +335,7 @@ index 8e3d175..719e05f 100644
    HAL_Init();
  
    SystemClock_Config_Full();
-@@ -108,25 +273,60 @@ void init_bm(void)
+@@ -108,25 +279,60 @@ void init_bm(void)
    fuse_vddio();
  #endif
  
@@ -340,7 +404,7 @@ index 8e3d175..719e05f 100644
  
    /* by default processing is active */
    AudioProcIsOn = true;
-@@ -138,9 +338,892 @@ void init_bm(void)
+@@ -138,9 +344,1101 @@ void init_bm(void)
    * @param  None
    * @retval None
    */
@@ -594,13 +658,24 @@ index 8e3d175..719e05f 100644
 + * (RCC_MEMENR_AXISRAM3EN|4EN|5EN). So the two big buffers go there, and the
 + * application's own region is untouched.
 + *
++ * The three banks are CONTIGUOUS -- 0x34200000 + 3 x 0x70000 = 0x34350000,
++ * where npuRAM6 begins -- so they are one 1,376,256 B block, which is what lets
++ * Gate 7 put a full 800x480x2 = 768,000 B framebuffer below the two audio
++ * buffers without a PSRAM region, a linker script change, -DUSE_EXT_SRAM, or the
++ * RISAF question that firmware/WORKLIST.md section 7.4 raises:
++ *
++ *   0x34200000  LCD framebuffer   768,000 B
++ *   0x342BC000  PCM               256,000 B
++ *   0x342FB000  front-end scratch 256,000 B
++ *   0x34339800  free               92,160 B  up to npuRAM6 at 0x34350000
++ *
 + * Both banks are probed before use rather than assumed -- a bank that is not
 + * clocked reads back garbage, and silently scoring garbage would be worse than
 + * not running.
 + */
 +#define GATE5_WAV_BASE     0x72000000u   /* waveform blob in external flash     */
-+#define GATE5_PCM_RAM      0x34200000u   /* AXISRAM3, 448 K, unused by the mpool*/
-+#define GATE5_SCRATCH_RAM  0x34270000u   /* AXISRAM4, 448 K, unused by the mpool*/
++#define GATE5_PCM_RAM      0x342BC000u   /* AXISRAM3/4, above the framebuffer   */
++#define GATE5_SCRATCH_RAM  0x342FB000u   /* AXISRAM4/5                          */
 +
 +static citrinet_fe_t g5_fe;
 +
@@ -813,6 +888,162 @@ index 8e3d175..719e05f 100644
 +}
 +#endif /* GATE5_WAV */
 +
++#ifdef GATE7_LCD
++/* stm32n6-stt: Gate 7 -- the transcript on the 800x480 panel.
++ *
++ * The audio package is strictly headless: no stm32n6570_discovery_lcd.c in its
++ * BSP, no Utilities/, no fonts. Everything here is grafted from
++ * STM32N6-GettingStarted-ObjectDetection and lives in firmware/lcd/, mirroring
++ * that package's directory layout so every relative #include -- and
++ * stm32_lcd.c's habit of textually #including all five font .c files -- resolves
++ * unmodified.
++ *
++ * NO PSRAM. firmware/WORKLIST.md section 7.4 budgets a linker PSRAM region,
++ * -DUSE_EXT_SRAM and an unresolved RISAF question for the 768,000 B framebuffer.
++ * None of that is needed: AXISRAM3/4/5 are CONTIGUOUS (0x34200000 + 3 x 0x70000
++ * = 0x34350000, where npuRAM6 starts), the mpool claims none of them, and
++ * Int_Mem_Config() already clocks them. The framebuffer takes the bottom
++ * 768,000 B and the two audio buffers move above it -- see the map at
++ * GATE5_PCM_RAM. That the LTDC master can reach AXISRAM at all is not an
++ * assumption: ST's own ObjectDetection app puts its layer 0 at 0x34200000.
++ *
++ * One layer, RGB565, full screen. The OD app needs two (camera background plus
++ * an ARGB4444 overlay); a captioner redraws one surface per utterance.
++ */
++#define G7_FB_ADDR    ((uint32_t)LCD_LAYER_0_ADDRESS)
++#define G7_W          800u
++#define G7_H          480u
++#define G7_FB_BYTES   (G7_W * G7_H * 2u)
++#define G7_COLS       57u     /* Font20 is 14 px wide: 800/14 */
++#define G7_LH         20u     /* Font20 height                */
++#define G7_MAXLINES   7u
++
++static int  g7_up;
++static char g7_line[G7_COLS + 1u];
++
++/* RIF, copied from the ObjectDetection app's Security_Config(). The audio app's
++ * NPU_Config() opens the NPU master and nothing else, so without this the LTDC
++ * and DMA2D masters are not authorised and the panel stays dark. */
++static void g7_rif(void)
++{
++  __HAL_RCC_RIFSC_CLK_ENABLE();
++  RIMC_MasterConfig_t m = {0};
++  m.MasterCID = RIF_CID_1;
++  m.SecPriv   = RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV;
++  HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_DMA2D, &m);
++  HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_LTDC1, &m);
++  HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_LTDC2, &m);
++  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_DMA2D,
++                                        RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
++  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_LTDC,
++                                        RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
++  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_LTDCL1,
++                                        RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
++  HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_LTDCL2,
++                                        RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
++}
++
++/* The M55 draws through its D-cache; the LTDC reads the framebuffer by another
++ * path. Without this the panel shows whatever was in AXISRAM3 at reset. */
++static void g7_flush(void)
++{
++  mcu_cache_clean_range(G7_FB_ADDR, G7_FB_ADDR + G7_FB_BYTES);
++}
++
++static void g7_at(uint32_t x, uint32_t y, const char *t, Text_AlignModeTypdef m)
++{
++  UTIL_LCD_DisplayStringAt(x, y, (uint8_t *)t, m);
++}
++
++/* Word wrap. Breaks at the last space that fits; falls back to a hard cut for a
++ * word longer than the line, which a CTC decoder can certainly produce. */
++static uint32_t g7_wrap(const char *s, uint32_t x, uint32_t y0, uint32_t maxlines)
++{
++  uint32_t li = 0;
++  while (*s && li < maxlines)
++  {
++    uint32_t k = 0;
++    while (s[k] && k < G7_COLS) k++;
++    uint32_t cut = k;
++    if (s[k])
++    {
++      uint32_t b = k;
++      while (b > 0u && s[b] != ' ') b--;
++      if (b > 0u) cut = b;
++    }
++    memcpy(g7_line, s, cut);
++    g7_line[cut] = '\0';
++    g7_at(x, y0 + li * G7_LH, g7_line, LEFT_MODE);
++    li++;
++    s += cut;
++    while (*s == ' ') s++;
++  }
++  return li;
++}
++
++static int g7_init(void)
++{
++  g7_rif();
++
++  if (BSP_LCD_Init(0, LCD_ORIENTATION_LANDSCAPE) != BSP_ERROR_NONE)
++  {
++    my_printf("# gate7: BSP_LCD_Init failed\r\n");
++    return 0;
++  }
++  BSP_LCD_LayerConfig_t cfg;
++  cfg.X0 = 0; cfg.X1 = G7_W;
++  cfg.Y0 = 0; cfg.Y1 = G7_H;
++  cfg.PixelFormat = LCD_PIXEL_FORMAT_RGB565;
++  cfg.Address     = G7_FB_ADDR;
++  if (BSP_LCD_ConfigLayer(0, LTDC_LAYER_1, &cfg) != BSP_ERROR_NONE)
++  {
++    my_printf("# gate7: BSP_LCD_ConfigLayer failed\r\n");
++    return 0;
++  }
++  UTIL_LCD_SetFuncDriver(&LCD_Driver);
++  UTIL_LCD_SetLayer(LTDC_LAYER_1);
++  UTIL_LCD_SetFont(&Font20);
++  UTIL_LCD_SetBackColor(UTIL_LCD_COLOR_BLACK);
++  UTIL_LCD_SetTextColor(UTIL_LCD_COLOR_WHITE);
++  UTIL_LCD_Clear(UTIL_LCD_COLOR_BLACK);
++  g7_flush();
++  g7_up = 1;
++  my_printf("# gate7: LCD up, %lux%lu RGB565 at %p, pixel clock %lu Hz\r\n",
++            (unsigned long)G7_W, (unsigned long)G7_H, (void *)G7_FB_ADDR,
++            (unsigned long)HAL_RCCEx_GetPeriphCLKFreq(RCC_PERIPHCLK_LTDC));
++  return 1;
++}
++
++/* The banner is redrawn every time so the state colour is unambiguous across
++ * the room: green while the microphone is live, amber while the NPU runs. */
++static void g7_banner(const char *state, uint32_t colour)
++{
++  if (!g7_up) return;
++  UTIL_LCD_FillRect(0, 0, G7_W, 64u, UTIL_LCD_COLOR_ST_BLUE_DARK);
++  UTIL_LCD_SetBackColor(UTIL_LCD_COLOR_ST_BLUE_DARK);
++  UTIL_LCD_SetTextColor(UTIL_LCD_COLOR_WHITE);
++  g7_at(12u, 4u, "STM32N6570-DK   Citrinet-256 CTC   8 s window", LEFT_MODE);
++  UTIL_LCD_SetTextColor(colour);
++  g7_at(12u, 34u, state, LEFT_MODE);
++  UTIL_LCD_SetBackColor(UTIL_LCD_COLOR_BLACK);
++  UTIL_LCD_SetTextColor(UTIL_LCD_COLOR_WHITE);
++  g7_flush();
++}
++
++static void g7_transcript(const char *text, const char *stats, uint32_t colour)
++{
++  if (!g7_up) return;
++  UTIL_LCD_FillRect(0, 64u, G7_W, G7_H - 64u, UTIL_LCD_COLOR_BLACK);
++  UTIL_LCD_SetTextColor(colour);
++  if (text && text[0]) (void)g7_wrap(text, 12u, 96u, G7_MAXLINES);
++  else                 g7_at(12u, 96u, "(nothing decoded)", LEFT_MODE);
++  UTIL_LCD_SetTextColor(UTIL_LCD_COLOR_ST_GRAY);
++  if (stats) g7_at(12u, G7_H - 28u, stats, LEFT_MODE);
++  UTIL_LCD_SetTextColor(UTIL_LCD_COLOR_WHITE);
++  g7_flush();
++}
++#endif /* GATE7_LCD */
++
 +#ifdef GATE5_MIC
 +/* stm32n6-stt: Gate 5 live capture -- the board's own microphone, end to end.
 + *
@@ -998,7 +1229,8 @@ index 8e3d175..719e05f 100644
 +  my_printf("%s%d.%d", x10 < 0 ? "-" : "", a / 10, a % 10);
 +}
 +
-+typedef struct { int rc; uint32_t guard_pct; uint32_t nchars; } g5m_res_t;
++typedef struct { int rc; uint32_t guard_pct; uint32_t nchars;
++                 uint32_t fe_cy; uint32_t npu_cy; } g5m_res_t;
 +
 +/* Front end + NPU + CTC over whatever is in `pcm`, reported under `tag`. */
 +static g5m_res_t g5m_infer(uint32_t utt, const char *tag, const int16_t *pcm,
@@ -1060,6 +1292,8 @@ index 8e3d175..719e05f 100644
 +  r.rc        = rc;
 +  r.guard_pct = (g5_fe.guard_below * 100u) / guard_tot;
 +  r.nchars    = nw;
++  r.fe_cy     = t1 - t0;
++  r.npu_cy    = n1 - n0;
 +  return r;
 +}
 +
@@ -1077,7 +1311,21 @@ index 8e3d175..719e05f 100644
 +
 +  BSP_LED_Init(LED_GREEN);
 +  BSP_LED_Off(LED_GREEN);
++
++  /* Record_Init() FIRST, and that ordering is load-bearing. PLL4 is shared:
++   * MX_MDF1_ClockConfig() reprograms it (at 16 kHz to 1376/28 = 49.142 MHz,
++   * Patch/stm32n6570_discovery_audio.patch.hsi_600_400.c:65-67) and
++   * MX_LTDC_ClockConfig() derives the pixel clock from whatever it finds there,
++   * as IC16 = PLL4 / 2 (stm32n6570_discovery_lcd.c:434-435). 49.142 / 2 =
++   * 24.57 MHz, within 2 % of the 25 MHz the panel wants -- a coincidence, but a
++   * usable one. Bringing the LCD up first would set the pixel clock from a PLL4
++   * that the audio path then moves out from under it. */
 +  Record_Init();
++#ifdef GATE7_LCD
++  (void)g7_init();
++  g7_banner("STARTING", UTIL_LCD_COLOR_ST_GRAY_LIGHT);
++  g7_transcript("", "waiting for the first utterance", UTIL_LCD_COLOR_ST_GRAY);
++#endif
 +
 +  int16_t *const pcm = (int16_t *)GATE5_PCM_RAM;
 +
@@ -1102,11 +1350,17 @@ index 8e3d175..719e05f 100644
 +
 +    g5m_w   = 0;
 +    g5m_arm = 1;
++#ifdef GATE7_LCD
++    g7_banner("LISTENING  --  speak now", UTIL_LCD_COLOR_ST_GREEN_LIGHT);
++#endif
 +    BSP_LED_On(LED_GREEN);
 +    my_printf("# >>> SPEAK NOW, %d s\r\n", (int)(CITRINET_FE_NSAMPLES / CITRINET_FE_SR));
 +    while (g5m_arm) { __NOP(); }
 +    BSP_LED_Off(LED_GREEN);
 +    BSP_AUDIO_IN_Stop(1);
++#ifdef GATE7_LCD
++    g7_banner("PROCESSING", UTIL_LCD_COLOR_ST_YELLOW);
++#endif
 +    my_printf("# <<< captured %lu samples\r\n", (unsigned long)g5m_w);
 +
 +    /* ---- level, the number the whole gate turns on --------------------- */
@@ -1150,6 +1404,25 @@ index 8e3d175..719e05f 100644
 +
 +    /* ---- knob 2 as the control, knob 1 as the fix ---------------------- */
 +    const g5m_res_t raw = g5m_infer(utt, "raw", pcm, 1);
++#ifdef GATE7_LCD
++    {
++      /* g5m_text still holds the raw pass's transcript -- the raw pass is what a
++       * product would ship; peak_normalize is a diagnostic control (section 12). */
++      static char g7_stats[G7_COLS + 1u];
++      const int pdb = g5m_dbfs_x10(peak);
++      snprintf(g7_stats, sizeof g7_stats,
++               "fe %lums npu %lums  %d.%ddBFS  guard %lu%%  gain %d%s",
++               (unsigned long)(raw.fe_cy / 600000u),
++               (unsigned long)(raw.npu_cy / 600000u),
++               pdb / 10, (pdb < 0 ? -pdb : pdb) % 10,
++               (unsigned long)raw.guard_pct, gain,
++               clip > 0u ? "  CLIP" : "");
++      g7_transcript(g5m_text, g7_stats,
++                    raw.rc == 0 ? UTIL_LCD_COLOR_WHITE : UTIL_LCD_COLOR_ST_YELLOW);
++      g7_banner(raw.nchars ? "RESULT" : "NO SPEECH",
++                raw.nchars ? UTIL_LCD_COLOR_WHITE : UTIL_LCD_COLOR_ST_GRAY);
++    }
++#endif
 +
 +    const float dg = citrinet_fe_peak_normalize(pcm, (uint32_t)CITRINET_FE_NSAMPLES,
 +                                                0.5f, 64.0f);
@@ -1233,7 +1506,7 @@ index 8e3d175..719e05f 100644
    time_stats_init();
  
    initAudioProc(&audio_proc_ctx);
-@@ -172,6 +1255,7 @@ void exec_bm(void)
+@@ -172,6 +1470,7 @@ void exec_bm(void)
  
    test_dump();
    my_printf("\n\r# End Processing\n\r");
@@ -1241,7 +1514,7 @@ index 8e3d175..719e05f 100644
  }
  #endif
  /**
-@@ -554,7 +1638,14 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
+@@ -554,7 +1853,14 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
  {
    if (Instance == 1U)
    {
@@ -1256,7 +1529,7 @@ index 8e3d175..719e05f 100644
    }
  }
  
-@@ -567,7 +1658,11 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
+@@ -567,7 +1873,11 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
  {
    if (Instance == 1U)
    {
@@ -1268,7 +1541,7 @@ index 8e3d175..719e05f 100644
    }
  }
  #if (CTRL_X_CUBE_AI_AUDIO_OUT==COM_TYPE_HEADSET)
-@@ -842,7 +1937,18 @@ static void Ext_Mem_Config(void)
+@@ -842,7 +2152,18 @@ static void Ext_Mem_Config(void)
      __BKPT(0);
    }
    BSP_XSPI_NOR_EnableMemoryMappedMode(0);

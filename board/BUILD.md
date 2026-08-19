@@ -560,3 +560,59 @@ be regenerated: the folded ONNX, the compile workspace
 (`network_c_info.json`, `q800_real_OE_3_3_1_Q.json`, `network.csv`), and the
 weight blob. §1 explains why the tree's current `network.c` must be preserved
 while that happens.
+
+### The Gate 7 build
+
+Adds the LCD graft. Sources and include paths grow; the defines gain `GATE7_LCD`.
+
+```bash
+R=$(cd ../../../.. && pwd); L=$R/firmware/lcd
+make bm -j8 \
+  GCC_PATH=/home/claroche/opt/st/stm32cubeclt_1.21.0/GNU-tools-for-STM32/bin \
+  EXTRA_SOURCES="$R/firmware/src/citrinet_fe.c $R/firmware/src/citrinet_ctc.c \
+                 $R/firmware/src/stm32_lcd_ex.c \
+                 $L/BSP/STM32N6570-DK/stm32n6570_discovery_lcd.c \
+                 $L/Utilities/lcd/stm32_lcd.c \
+                 ../../Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_ltdc.c \
+                 ../../Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_ltdc_ex.c \
+                 ../../Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_dma2d.c" \
+  EXTRA_CFLAGS="-DGATE4_CANNED -DGATE5_WAV -DGATE5_MIC -DGATE7_LCD \
+                -DCITRINET_FE_USE_CMSIS=1 -I$R/firmware/inc \
+                -I$L/BSP/STM32N6570-DK -I$L/Utilities/lcd \
+                -I../../Drivers/BSP/Components/Common"
+```
+
+`firmware/lcd/` mirrors the ObjectDetection package's directory layout on purpose:
+`stm32n6570_discovery_lcd.h` includes `"../Components/rk050hr18/rk050hr18.h"`,
+`stm32_lcd.h` includes `"../Fonts/fonts.h"`, and `stm32_lcd.c` textually
+`#include`s all five font `.c` files. Mirroring the tree means not one of those
+lines has to be edited. `-I.../Drivers/BSP/Components/Common` supplies the
+abstract `lcd.h`, which the audio package already ships.
+
+Two edits in the vendored `Inc/` are part of the patch and both matter:
+
+| file | what | why |
+|---|---|---|
+| `stm32n6xx_hal_conf.h` | pull `HAL_LTDC_MODULE_ENABLED` and `HAL_DMA2D_MODULE_ENABLED` out of their block comments | the HAL `.c` files self-guard on these, so a missing macro fails at **link** time with undefined `HAL_LTDC_*`, not at compile time |
+| `stm32n6570_discovery_conf.h` | `LCD_LAYER_0_ADDRESS` `0x34000000` → `0x34200000` | `BSP_LCD_InitEx()` programs layer 0 *before* the app can call `BSP_LCD_ConfigLayer()`; the stock value is 1 KiB below this app's `ORIGIN` and `LCD_LAYER_1_ADDRESS` is inside its `.text`, so the LTDC would DMA-scan the application's code as pixels |
+
+**No PSRAM.** `firmware/WORKLIST.md` §7.4 budgets a linker `PSRAM` region,
+`-DUSE_EXT_SRAM` and an unresolved RISAF question for the framebuffer. None is
+needed: AXISRAM3/4/5 are contiguous (`0x34200000` + 3 × `0x70000` = `0x34350000`,
+where npuRAM6 starts) and the mpool claims none of them.
+
+```
+0x34200000  LCD framebuffer   768,000 B   800x480 RGB565
+0x342BC000  PCM               256,000 B
+0x342FB000  front-end scratch 256,000 B
+0x34339800  free               92,160 B   up to npuRAM6
+```
+
+**PLL4 is shared, and the init order is load-bearing.** `MX_MDF1_ClockConfig()`
+reprograms PLL4 (at 16 kHz to 1376/28 = 49.142 MHz) and `MX_LTDC_ClockConfig()`
+takes the pixel clock from it as IC16 = PLL4/2 = 24.57 MHz — within 2 % of the
+panel's nominal 25 MHz, which is a coincidence rather than a design. So
+`Record_Init()` must run **before** `BSP_LCD_Init()`, or the audio path moves
+PLL4 out from under an already-configured LTDC. The build prints the measured
+`HAL_RCCEx_GetPeriphCLKFreq(RCC_PERIPHCLK_LTDC)` at init so this is checked, not
+assumed.
