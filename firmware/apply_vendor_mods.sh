@@ -96,12 +96,18 @@ if [ -f "$G/network.c" ]; then
   cp "$G/network_atonbuf.xSPI2.raw" "$M/network_data.bin"
   say "installed ($(stat -c%s "$M/network_data.bin") B of weights)"
 else
-  say "artifacts/model_c missing — run firmware/scripts/gen_model.sh first"
+  say "artifacts/model_c missing -- run:"
+  say "  compile/gen_model.sh artifacts/onnx/q800_relu4d_all.onnx deploy --install"
 fi
 
 echo
 echo "Done. Build with:"
 echo "  make bm -j8 GCC_PATH=/home/claroche/opt/st/stm32cubeclt_1.21.0/GNU-tools-for-STM32/bin \\"
 echo "       EXTRA_CFLAGS=\"-DGATE4_CANNED -I$R/firmware/inc\""
-echo "NOTE: audio_bm.c's gate4_canned() path is applied separately — see"
-echo "      firmware/vendor-mods/audio_bm.gate4.c.patch"
+echo "NOTE: the Gate 4 instrumentation (audio_bm.c/.h, app_config.h,"
+echo "      stm32n6xx_it.c) is applied separately:"
+echo "        git -C vendor/STM32N6-GettingStarted-Audio apply \\"
+echo "            $R/firmware/vendor-mods/gate4.patch"
+echo "      See board/BUILD.md sections 1-2. The older"
+echo "      firmware/vendor-mods/audio_bm.gate4.c.patch is NOT a patch -- it has"
+echo "      no diff markers and stops mid-function; gate4.patch supersedes it."

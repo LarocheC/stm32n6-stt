@@ -10,6 +10,16 @@ to the screening compile, so nothing downstream of the model changes.
 
 Evidence: `compile/reports/g800_st/`. Tool: ST Edge AI Core v4.0.1-20581 (compiler 1.1.3-275).
 
+> **The verdict stands; the geometry moved at Gate 4.** The graph that ships is
+> `q800_relu4d_all.onnx` (`q800_real.onnx` with both NPU workarounds applied), it
+> compiles to **448 epochs / 0 SW / 0 hybrid / 300 kB cpuRAM2 + 425 kB npuRAM6**,
+> and its weight blob is based at **`0x70400000`** — `compile/stt_audio.mpool`,
+> which moves octoFlash up so the application has 3 MB rather than the 512 kB ST's
+> own mpool leaves. Gate 2's pass criterion is unchanged and is still the check
+> that catches a base mismatch; `compile/gen_model.sh` reads the base out of the
+> mpool instead of hardcoding it, and `compile/score_build.py` runs the whole
+> check set. See `board/GATE4.md` Round 19 and `compile/DECISION-oauto-sched.md`.
+
 ---
 
 ## 1. ST's actual invocation

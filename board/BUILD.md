@@ -108,15 +108,19 @@ $ git -C vendor/STM32N6-GettingStarted-Audio diff --stat -- Projects/GS Projects
 
 Those four are the Gate 4 instrumentation, covered in §2.
 
-Note also that `apply_vendor_mods.sh:99` directs you to
+Note also that `apply_vendor_mods.sh` used to direct you to
 `firmware/scripts/gen_model.sh` when `artifacts/model_c` is missing. **There is
-no `firmware/scripts/` directory and no script by that name.** The equivalent
-now lives at `compile/gen_model.sh`, which compiles into
+no `firmware/scripts/` directory and there never was a script by that name.** The
+equivalent lives at `compile/gen_model.sh`, which compiles into
 `artifacts/compile/<tag>/` and — unlike the ST script it replaces — keeps the
 whole compiler workspace (`network_c_info.json`, `<stem>_OE_3_3_1_Q.json`,
 `network.csv`, `network_atonbuf.xSPI2.raw`). Those are exactly the files whose
-loss with the scratchpad is why this document exists. The path referenced in
-`apply_vendor_mods.sh:99` should be corrected to match.
+loss with the scratchpad is why this document exists.
+
+**Fixed 2026-08-19**: the script now prints the real command,
+`compile/gen_model.sh artifacts/onnx/q800_relu4d_all.onnx deploy --install`, and
+its closing note points at `firmware/vendor-mods/gate4.patch` rather than at the
+`audio_bm.gate4.c.patch` that §2 shows is not a patch.
 
 ---
 

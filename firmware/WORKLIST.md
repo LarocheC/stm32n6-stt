@@ -7,8 +7,10 @@ two cloned ST working trees rather than GitHub. Every path below is real and was
 - LCD donor: `vendor/STM32N6-GettingStarted-ObjectDetection/`
 - Context and gate definitions: `README.md`, `docs/FEASIBILITY.md` — not restated here.
 
-**No board access in this pass.** Nothing below has been run on silicon.
-Effort is developer-time for one person who has read this document.
+~~**No board access in this pass.** Nothing below has been run on silicon.~~
+**Gates 3, 4 and 6 have since been run and closed** — see §0 and the per-gate
+sections. Gates 5, 7 and 7b are still plan, not record. Effort is developer-time
+for one person who has read this document.
 
 Legend: **RISKY** = can fail in a way that invalidates a design assumption ·
 *mechanical* = tedious but the outcome is known.
@@ -28,6 +30,27 @@ Read this first; three established numbers moved.
 | "Whether the audio app enables npuRAM3/4/5" — open | unknown | **It does**, `audio_bm.c:741-759` |
 | "~40× sparse-filterbank win is available" | available | **already implemented** by ST (`MelFilterbank()` is a run-length dot product) |
 | LCD line width "47 characters, already derived by ST" | 47 | 47 is `N_PRINTABLE_CHARS`, sized for **Font24** (17 px); the OD app renders **Font20** (14 px) → **57** fit |
+
+### What Gate 4 moved, rounds 18-20 (2026-08-19)
+
+Everything in this block is measured on the board and is the reason several
+numbers above are now history.
+
+| | this document said | Actually |
+|---|---|---|
+| the graph that ships | `q800_real.onnx`, 618 epochs under ST's options | **`q800_relu4d_all.onnx`, 448 epochs** — `q800_real` → `fold_stride2.py` → `break_relu_chain.py`, both bit-exact |
+| 8 s epochs / SW / hybrid | 618 / 0 / 0 | **448 / 0 / 0**, and 0 `ACTIV→CONVACC` links |
+| 8 s activations | 925 KB (500 cpuRAM2 + 425 npuRAM6) | **725 KB (300 cpuRAM2 + 425 npuRAM6)**, still no PSRAM |
+| 8 s latency | 91.893 ms, a *scheduler* estimate | **124.035 ms measured**, 74,421,588 cycles against a 76,000,592-cycle estimate — 2.1 % under, 0.005 % run-to-run over 15 invokes |
+| weight blob base | `0x70180000` (ST's mpool) | **`0x70400000`** (`compile/stt_audio.mpool`), because the Citrinet app image does not fit ST's 512 kB slot |
+| "the NPU either maps an operator or it does not" | implicit | **false, twice.** Two operator configurations map, compile cleanly, report 0 SW epochs — and stall the part forever. Both are depthwise-convolution-adjacent; see Gate 4 below |
+| the model drop-in procedure | "write `firmware/scripts/gen_model.sh`" (item 4.1) | **`compile/gen_model.sh`**, which compiles *into* `artifacts/compile/<tag>/` and preserves the whole compiler workspace. `compile/score_build.py` scores a build |
+| epoch numbers in `board/GATE4.md` rounds 9-17 | as printed | **two too low.** The board's trace prints a 0-based software counter; atonn's `epoch_num` starts at 2 (`board/GATE4.md` Round 18) |
+| Gate 6 | "0.5 d, 6.1/6.2 done" | **closed**: 0 text disagreements over 9,226 characters |
+
+Sources: `board/GATE4.md` Rounds 18-20, `board/traces/round19_relu4d_pass.log`,
+`board/traces/round20_corpus64.score.txt`,
+`artifacts/compile/r19_relu4dall84/st_ai_output/network_generate_report.txt`.
 
 Gate 2 evidence (`compile/reports/g800_st/summary.txt` lines 40-45,
 `compile/reports/g800_st/cycles.json`):
@@ -246,7 +269,47 @@ via `Binary/flash-bin.sh aed bm`, which needs no toolchain at all.
 
 Goal: the first point where silicon can contradict desk research.
 
+> **CLOSED, 2026-08-19.** It contradicted desk research twice. Everything in this
+> section that is a *prediction* is marked below; everything that is a reading of
+> ST's scripts is still accurate and worth keeping. Full record:
+> [`../board/GATE4.md`](../board/GATE4.md); the build/sign/flash/read recipe that
+> came out of it: [`../board/BUILD.md`](../board/BUILD.md).
+>
+> | | |
+> |---|---|
+> | deployed graph | `artifacts/onnx/q800_relu4d_all.onnx` → `artifacts/compile/r19_relu4dall84/` |
+> | epochs | **448**, 0 SW, 0 hybrid, 0 `ACTIV→CONVACC` |
+> | memory | 300 kB cpuRAM2 + 425 kB npuRAM6, no PSRAM; weights 9.726 MB at `0x70400000` |
+> | latency | **124.035 ms** measured, 2.1 % under the compiler's estimate |
+> | correctness | device WER **5.81 %** vs host **5.92 %** over 64 utterances; paired 95 % CI [−1.290, +1.144] points, p = 0.897 |
+>
+> **Two NPU defects had to be worked around, and neither is documented by ST.**
+> 1. A **stride-2 depthwise** convolution stalls the NPU forever. Fix: fold the
+>    decimation into the following pointwise convolution — `model/fold_stride2.py`,
+>    3 sites, bit-exact, free.
+> 2. An **activation accelerator driving a convolution accelerator's data port**
+>    through the stream switch stalls forever, at 36 sites. Fix: keep the `Relu`
+>    on the 4-D tensor so atonn's reshape fusion cancels the pair it inserted —
+>    `model/break_relu_chain.py`, 84 sites, bit-exact, and *faster* than the graph
+>    that stalled (448 epochs vs 618). A 9-node reproducer for ST is in
+>    [`../board/REPRO-blocker2.md`](../board/REPRO-blocker2.md).
+>
+> **A trap for anyone reading the traces:** the board prints a 0-based software
+> epoch counter while atonn's `epoch_num` starts at 2, so every epoch number in
+> `board/GATE4.md` rounds 9-17 is **two too low** (Round 18).
+
 ### 4.0 The model drop-in procedure, as the scripts actually implement it
+
+> **This is now implemented by `compile/gen_model.sh`.** It is a Linux port of
+> `generate-n6-model.sh` that reads the octoFlash base out of the mpool instead
+> of hardcoding `0x70180000`, compiles *into* `artifacts/compile/<tag>/` so the
+> whole compiler workspace survives (`network_c_info.json`, `*_OE_3_3_1_Q.json`,
+> `network.csv`, the weight blob — exactly the files whose loss with a scratchpad
+> cost rounds 11-17), runs the deployment checks of `compile/GATE2.md` §6 as a
+> gate, and refuses an already-preprocessed `*_OE_*.onnx` input. `--install`
+> refreshes `artifacts/model_c/`, which `apply_vendor_mods.sh` step 6 reads.
+> `compile/score_build.py` scores a finished build: epochs / SW / hybrid /
+> `ACTIV→CONVACC` / memory / estimated cycles.
 
 `Projects/X-CUBE-AI/models/` is the drop point. Four scripts, all thin:
 
@@ -293,14 +356,20 @@ the same file; use `network_data.bin`, which is what `generate-n6-model.sh` prod
 
 | # | Item | Files | Effort | Marker |
 |---|---|---|---|---|
-| 4.1 | Write `firmware/scripts/gen_model.sh`: Linux port of `generate-n6-model.sh`, hard-wired to `artifacts/onnx/q800_real.onnx` + copies of ST's `stm32n6.mpool` and `user_neural_art.json`. **Read `compile/GATE2.md` §"option ablation" first** — it measures that adding `--Oauto-sched` to ST's string saves 300 KB of cpuRAM2 and 0.68 ms at 8 s (625 kB / 628 epochs / 91,212,624 cycles vs 925 kB / 618 / 91,893,224), and is what keeps 12 s off hyperRAM | new file | 1 h | mechanical |
-| 4.2 | Drop `network.c`, `network.h`, `stai_network.c`, `stai_network.h`, `network_data.bin` into the working tree | `firmware/models/` | 0.5 h | mechanical |
-| 4.3 | **Relax `AiDPUCheckModel()`** — see below | `Projects/Dpu/ai_dpu.c:99-107` | 0.5 h | mechanical |
-| 4.4 | Write `firmware/inc/canned_features.h`: one host-computed int8 `[80,800]` tensor, 64,000 B `const` | new, generated | 1 h | mechanical |
-| 4.5 | Bypass mic+preproc: `memcpy` the canned tensor into `p_stai_inputs[0]`, keep the `mcu_cache_clean_invalidate_range()` call | new `audio_bm.c` variant | 1 h | mechanical |
-| 4.6 | **Add a post-inference cache invalidate** on the 102,500 B output — the stock app has none | new | 0.5 h | **RISKY** |
-| 4.7 | Argmax over `[100,1025]` int8, print 100 token ids over UART | new | 1 h | mechanical |
-| 4.8 | Compare against host ORT argmax; DWT-time the invoke | host script + board | 2 h | **RISKY** |
+| 4.1 | ~~Write `firmware/scripts/gen_model.sh`~~ | **done** as `compile/gen_model.sh` (see §4.0). Note it defaults to `compile/stt_audio.mpool`, not ST's — the weights had to move to `0x70400000` to leave room for the app image | 1 h | mechanical |
+| 4.2 | ~~Drop the generated sources into the working tree~~ | **done**, `artifacts/model_c/` + `apply_vendor_mods.sh` step 6 | 0.5 h | mechanical |
+| 4.3 | ~~**Relax `AiDPUCheckModel()`**~~ | **done**, `firmware/apply_vendor_mods.sh` step 2 | 0.5 h | mechanical |
+| 4.4 | ~~Write `firmware/inc/canned_features.h`~~ | **done**, generated by `firmware/tools/gen_canned_features.py` | 1 h | mechanical |
+| 4.5 | ~~Bypass mic+preproc~~ | **done**, `gate4_canned()` under `-DGATE4_CANNED` (`board/BUILD.md` §2) | 1 h | mechanical |
+| 4.6 | ~~**Add a post-inference cache invalidate**~~ | **done** — and it was *not* the suspect it was billed as; the output was never stale | 0.5 h | **RISKY** |
+| 4.7 | ~~Argmax over `[100,1025]` int8, print 100 token ids over UART~~ | **done** | 1 h | mechanical |
+| 4.8 | ~~Compare against host ORT argmax; DWT-time the invoke~~ | **done**, and then redone properly over 64 utterances — `firmware/tools/gen_corpus.py` + `firmware/test/score_corpus.py`, `board/traces/round20_corpus64.score.txt` | 2 h | **RISKY** |
+
+**What the one-day estimate missed.** The list above is complete and every item
+was mechanical as predicted. It took twenty rounds anyway, because two operator
+configurations compile cleanly, report 0 software epochs, and stall the part
+forever — a failure mode nothing in this document anticipated, and one that six
+rounds were spent misattributing to the boot chain.
 
 **4.3 is a hard blocker, not a nicety.** `ai_dpu.c:99-107`:
 
@@ -341,6 +410,22 @@ If argmax comes out plausible-but-wrong at Gate 4, this is the first suspect.
 **Pass:** on-device token ids match host ORT argmax on the same canned tensor, and wall
 time is within ~2× of 91.9 ms. Honest band from `docs/FEASIBILITY.md` §5: **100-250 ms**.
 
+> **The latency half passed: 124.035 ms, inside the band.** The exact-match half
+> did **not**, and should not have been written as a binary: on the canned tensor
+> the device disagrees with host onnxruntime on 5 of 100 frames. One utterance
+> cannot say whether that matters — 4 word errors in 17 words is a Wilson
+> interval of [9.6 %, 47.3 %] — so it was settled by measuring 64 utterances
+> instead. Device WER 5.81 %, host 5.92 %, paired difference −0.118 points,
+> bootstrap 95 % [−1.290, +1.144], p = 0.897. The disagreements sit where the
+> host is nearly undecided (6.25× enriched in the tightest margin decile, zero in
+> the widest 20 %, 17 host frames are *exact* argmax ties) and 70.8 % of them are
+> blank shifts CTC collapses away. **"No difference" is not established** — the
+> interval is 2.43 points wide. `board/GATE4.md` Round 20.
+>
+> A criterion that would have been right: *the device's decoded text does not
+> disagree with the host's by more than the corpus can resolve*, stated with the
+> corpus size up front.
+
 **Deployment contract to hard-check at runtime** (`compile/reports/g800_real/io_contract.h`):
 
 | | format | flags | rank | shape | bytes | scale | offset |
@@ -357,6 +442,37 @@ Both alignments 32. Read the scale from `info.inputs[0].scale.data[0]` at runtim
 
 This is the largest and riskiest gate. 2-3 days, and the ordering below is deliberate:
 the level self-test goes in with the *first* commit, not at the end.
+
+> **Still the plan of record — this section has not been superseded.** Four of its
+> items are built and host-verified (5.3, 5.5, 5.6, 5.9 → `firmware/src/citrinet_fe.c`,
+> `firmware/inc/citrinet_fe_tables.h`, `firmware/tools/gen_mel_tables.py`), and
+> `firmware/FRONTEND.md` measures **0 of 768,000 int8 values differing** from
+> `model/fe.py` over 12 utterances in the shipping CMSIS configuration. Nothing
+> has run on the M55.
+>
+> **What Gate 4 changed here.** Three things, none of them large but all of them
+> load-bearing:
+>
+> - **The model drop-in is `compile/gen_model.sh`**, not the `firmware/scripts/`
+>   script item 4.1 imagined, and the graph it must be handed is
+>   `artifacts/onnx/q800_relu4d_all.onnx` — feeding it `q800_real.onnx` produces a
+>   build that stalls the NPU. `model/fold_stride2.py` and
+>   `model/break_relu_chain.py` are not optional.
+> - **The weight blob is at `0x70400000`, not `0x70180000`**
+>   (`compile/stt_audio.mpool`), which is what leaves the application 3 MB.
+>   Cross-cutting rule 3 below is updated accordingly.
+> - **Epoch numbers in `board/GATE4.md` rounds 9-17 are two too low** — the board
+>   prints a 0-based counter, atonn's `epoch_num` starts at 2 (Round 18). If Gate
+>   5's front end ever has to be debugged against an epoch trace, read Round 18
+>   before Round 15.
+>
+> Two Gate 4 side-effects also touch this gate directly. `-DGATE4_CANNED` shrinks
+> `AudioBM_proc_t` by ~269 kB of `.bss` (`board/BUILD.md` §3), which is how the
+> canned build fits at all — item 5.7 has to solve the same problem for real. And
+> the corpus harness measured **140.0 ms** per invoke instead of 124.0 ms purely
+> because it `memcpy`s 64,000 B from external flash immediately before each run;
+> that is unexplained and untested, but it is a warning that *how* the features
+> reach the NPU can cost 13 % (`board/GATE4.md` Round 20).
 
 ### 5.0 What ST's library is and what it cannot do
 
@@ -929,24 +1045,40 @@ So push-to-talk is: set a `volatile bool g_ptt` in `BSP_PB_Callback`, and read
    `firmware/src/` first and fall through to `vendor/` for the untouched 95 %.
 2. **Pin the toolchain.** ST Edge AI Core **v4.0.1-20581**. All 107 grouped convolutions
    reaching hardware is an empirical property of this build with no vendor commitment
-   (`docs/FEASIBILITY.md` risk 4). Make `618 epochs / 0 SW / 0 hybrid` a regression gate on
-   any compiler bump: `grep -c "pure software (SW) epochs *0"` the summary.
-3. **Never interleave `zoo measure` with a demo flash.** Both write the external flash at
-   0x70180000 (`docs/FEASIBILITY.md` risk 5).
-4. **Do not touch the board in this pass.** No `STM32_Programmer_CLI`, no OTP, no
-   `stedgeai validate --mode target`.
+   (`docs/FEASIBILITY.md` risk 4). ~~Make `618 epochs / 0 SW / 0 hybrid` a regression gate
+   on any compiler bump: `grep -c "pure software (SW) epochs *0"` the summary.~~
+   **The constant is now `448 epochs / 0 SW / 0 hybrid / 0 ACTIV→CONVACC` on
+   `q800_relu4d_all.onnx`, and the check is `compile/score_build.py`, not a grep.**
+   The epoch table alone cannot see either defect Gate 4 found: both compile to
+   0 SW / 0 hybrid and stall the part.
+3. **Never interleave `zoo measure` with a demo flash.** ~~Both write the external flash at
+   0x70180000~~ — the demo's weights moved to **0x70400000** (`compile/stt_audio.mpool`),
+   the app sits at 0x70100000 and the Gate 4 corpus blob at 0x71000000. The rule still
+   holds for anything the zoo writes; `board/flash_and_verify.sh:40-48` refuses an app
+   image that would run into the weight blob (`docs/FEASIBILITY.md` risk 5).
+4. ~~**Do not touch the board in this pass.**~~ Superseded — gates 3 and 4 ran on the
+   board. The standing rules are in `board/BUILD.md`: read the OTP before flashing, sign
+   with `-align` (ST's Makefile omits it), and verify the entry point before every flash.
 
 ## Effort roll-up
 
-| gate | effort | of which RISKY |
-|---|---|---|
-| 3 — build & flash stock app | 0.5 d | OTP fuse state |
-| 4 — Citrinet + canned features | 1 d | ST int8 ≠ ORT int8; real latency; output cache |
-| 5 — log-mel front end | **3 d** | log guard; per-feature norm; f32 migration; capture rewrite; gain staging |
-| 6 — CTC + detokeniser | 0.5 d | — (6.1/6.2 already done) |
-| 7 — LCD graft | 1.5 d | RIF/PSRAM |
-| **total** | **6.5 d** | |
+| gate | effort | status | of which RISKY |
+|---|---|---|---|
+| 3 — build & flash stock app | 0.5 d | **closed** | OTP fuse state |
+| 4 — Citrinet + canned features | 1 d | **closed** | ST int8 ≠ ORT int8; real latency; output cache |
+| 5 — log-mel front end | **3 d** | open; 5.3/5.5/5.6/5.9 built and host-verified | log guard; per-feature norm; f32 migration; capture rewrite; gain staging |
+| 6 — CTC + detokeniser | 0.5 d | **closed** on the host | — |
+| 7 — LCD graft | 1.5 d | not started | RIF/PSRAM |
+| **remaining** | **4.5 d** | | |
 
 Down from the 8-11 d in `docs/FEASIBILITY.md` because gates 0-2 are closed and Gate 6 is
 half-built — but Gate 5 grew, because the float16 finding and the `PATCH_LENGTH` memory
 blow-up were not in the original estimate.
+
+**The 1 d estimated for Gate 4 was wrong by an order of magnitude**, and not
+because the work was misjudged: every one of items 4.1-4.8 was mechanical exactly
+as predicted. It was the risk register that was wrong. "The compiler reports 0
+software epochs" was treated as sufficient evidence that the part would execute
+the graph, and it is not — two operator configurations compile clean, report
+0 SW / 0 hybrid, and stall forever. Nothing in the 4.5 d above carries a
+comparable unknown, but nothing in the original 1 d did either.

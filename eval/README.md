@@ -6,12 +6,27 @@ arbitrary graph run on this part — live in `stm32n6-deployment-zoo`.)
 All results in `results/` are **host** measurements: LibriSpeech dev-clean,
 ONNX Runtime, degradations applied in simulation. Nothing here touched the board.
 
-`results/recs.json` now points at `corpus/LibriSpeech/dev-clean` (all 2,703
-files verified present). Its record **order is load-bearing** — every selection
-below is an RNG permutation of indices into a filtered slice of that list, so
-sorting or regenerating it silently changes every set. The Gate 1 scripts are
-retargeted and runnable; the older `run_*.py` still carry scratchpad paths and
-need retargeting before rerunning.
+The one accuracy measurement that *did* touch the board lives elsewhere:
+`board/traces/round20_corpus64.score.txt` scores 64 utterances computed by the
+NPU against these same host references (device 5.81 % WER vs host 5.92 %, paired
+95 % CI [−1.29, +1.14] points). It uses **host-computed features**, so it
+isolates the NPU; the on-device front end is still unmeasured.
+
+`results/recs.json` names the 2,703 dev-clean files, all of them present under
+this repository's `corpus/LibriSpeech/dev-clean`. Its record **order is
+load-bearing** — every selection below is an RNG permutation of indices into a
+filtered slice of that list, so sorting or regenerating it silently changes every
+set. The Gate 1 scripts are retargeted and runnable; the older `run_*.py` still
+carry scratchpad paths and need retargeting before rerunning.
+
+**Precisely: each record's `f` field is an absolute path beginning
+`/home/claroche/stm32n6-tts/corpus/`, a sibling directory that does not exist.**
+`recs.json` is evidence and is not rewritten, so every consumer must remap that
+prefix onto `<repo>/corpus/` and check the result exists — as
+`firmware/tools/gen_corpus.py:48-50,180-182` and
+`firmware/tools/gen_canned_features.py:22-26,39-41` do. A consumer that remaps
+the wrong prefix fails on every utterance; that was a real defect in
+`gen_canned_features.py`, fixed 2026-08-19.
 
 **Start here: [`GATE1.md`](GATE1.md)** — fp32 vs int8 WER at the shipped 8 s
 window, and the calibration/evaluation disjointness audit.

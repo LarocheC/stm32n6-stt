@@ -6,19 +6,31 @@ Neural-ART NPU** → greedy CTC decode → text on the 800×480 LCD.
 
 ## Status
 
-**Feasibility settled, GO. Gates 0–3 are closed.** The model has been exported,
-shape-frozen, quantised to int8 on real speech, compiled against the STM32N6
-audio application's real memory geometry, and scored for accuracy at the window
-it will actually ship at. **The board now runs firmware built from source on
-this machine** — the full path from compile through signing, flashing and boot
-is proven, with ST's own model in the loop. The Citrinet network has not been
-invoked on silicon yet; that is Gate 4.
+**Feasibility settled, GO. Gates 0–4 and 6 are closed; Gate 5 is not.** The model
+has been exported, shape-frozen, quantised to int8 on real speech, compiled
+against the STM32N6 audio application's real memory geometry, and scored for
+accuracy at the window it will actually ship at. **The full 800-frame
+Citrinet-256 encoder now executes on the Neural-ART NPU**, booted from external
+flash, in **124.0 ms** — 448 epoch blocks, 0 software epochs, 0 hybrid, every
+activation on-chip. Getting there cost two NPU defects, both in depthwise
+convolutions, both found on silicon and both fixed; see *On silicon* below.
+What is **not** done is the on-device front end: `firmware/src/citrinet_fe.c`
+reproduces `model/fe.py` exactly on the host but has never run on the M55. That
+is Gate 5, and it is the last real work.
+
+> That 124.0 ms is the invoke with the input tensor already in RAM. The
+> 64-utterance corpus run, which reads each tensor from memory-mapped external
+> flash immediately before inferring, measures **140.0 ms** median — 13 % more.
+> The delivery path costs real time; see `board/GATE4.md` Round 20.
 
 | gate | verdict | the number that decides it |
 |---|---|---|
 | 1 — int8 vs fp32 WER at 8 s | **PASS** | int8 costs **+0.50 points** (4.91 % → 5.41 %, n=373, 95 % CI [+0.07, +0.94]) against a ~1.0-point pass band |
 | 2 — recompile on ST's own mpool + option string | **PASS** | **0 SW / 0 hybrid epochs**, 947,200 B activations, **0 B in hyperRAM**, weights at **0x70180000** |
 | 3 — build, sign, flash and boot ST's stock app | **PASS** | our own build runs from external flash: `\| 22 \| 2.07% \| 0.88 \| 1.20 \| 0.00 \|` |
+| 4 — the Citrinet graph executes on the NPU | **PASS** | **448 epochs, 0 SW / 0 hybrid, 124.035 ms measured**, 2.1 % under the compiler's own cycle estimate, 0.005 % run-to-run |
+| 5 — log-mel front end on the M55 | **open** | host parity is exact (**0 of 768,000** int8 values differ) but nothing has run on the M55; see *Next* |
+| 6 — greedy CTC + detokeniser | **PASS** | **0 text disagreements** over 100 utterances / 9,226 characters against `model/fe.py:greedy()` — host-side; the C decoder has not run on the M55 |
 
 Gates 1 and 2 were re-run from scratch by an adversarial verifier and reproduced
 exactly — Gate 1 with an independent harness (zero per-utterance disagreements
@@ -58,6 +70,11 @@ The compile result that decides the project:
 > still reads 0 SW / 0 hybrid. Adding `--Oauto-sched` back reproduces this table
 > exactly. Note also that the pool is not fungible: npuRAM6 is at **94.87 %**
 > (~23 KB spare) while cpuRAM2 sits at 48.83 %. See [`compile/GATE2.md`](compile/GATE2.md).
+>
+> **Gate 4 moved them again**, and this table is now history for the 8 s row. The
+> graph that ships is the one with both NPU workarounds applied, and it is
+> *smaller* than either: **448 epochs, 300 kB cpuRAM2 + 425 kB npuRAM6, 9.726 MB
+> of weights at `0x70400000`, 76.0 M estimated cycles.** See *On silicon*.
 
 **Zero software epochs.** Every operator in a full ASR encoder — 503 nodes of
 exactly seven types: 282 Conv (107 of them grouped/depthwise), 130 Relu,
@@ -69,6 +86,46 @@ its 391 epochs in software.
 Evidence: `compile/reports/*/summary.txt`, ST Edge AI Core v4.0.1-20581.
 See [`docs/FEASIBILITY.md`](docs/FEASIBILITY.md) for the full assessment,
 including what the original plan got wrong.
+
+## On silicon
+
+**The compiled graph did not run as compiled.** Two Neural-ART defects, both in
+depthwise convolutions, had to be found on the board and then worked around in
+the ONNX graph. Both workarounds are bit-exact and neither costs anything:
+
+| # | the defect | the fix | the cost |
+|---|---|---|---|
+| 1 | a **stride-2 depthwise** convolution stalls the NPU forever. The stall follows the operator across two compiler schedules, so it is not a scheduling artefact | fold the decimation into the pointwise convolution that follows it — with dilation 1 the stride-2 output at *i* is the stride-1 output at *2i*, and the Q/DQ between them commutes with decimation (`model/fold_stride2.py`) | none. 3 sites, 0 of 3,075,000 output elements differ over 30 random inputs |
+| 2 | an **activation accelerator driving a convolution accelerator's data port** through the stream switch stalls forever — `ACTIV 1 → CONVACC 0/1/2 port 0`, at 36 sites. atonn produces it when a `Reshape` separates a `Relu` from its producing convolution, so the compiler chains the `Relu` *forwards* into its consumer instead of backwards | keep the `Relu` on the 4-D tensor, so atonn's own `fuse_consecutive_reshapes` cancels the pair it inserted and the `Relu` ends up adjacent to its producer (`model/break_relu_chain.py`, 84 sites, discovered rather than hardcoded) | none, and it is **faster than the graph that stalled**: 448 epochs against 618, 300 kB of cpuRAM2 against 500 kB, 76.0 M estimated cycles against 92.5 M |
+
+Both are verified `max|diff| = 0` over 3,075,000 output elements. The check is
+sensitive: flipping one LSB of one int8 weight makes it report `max|diff| = 3.45`.
+Blocker 2 has a **9-node, 2,453-byte** reproducer for ST, beside a 6-node control
+that differs in nothing else: [`board/REPRO-blocker2.md`](board/REPRO-blocker2.md).
+
+The deployed build is `artifacts/compile/r19_relu4dall84/`:
+
+| | |
+|---|---|
+| epochs | **448** — 0 pure-software, 0 hybrid |
+| activations | 300 kB cpuRAM2 + 425 kB npuRAM6, **0 B in hyperRAM**, no PSRAM |
+| weights | **9.726 MB** in octoFlash at `0x70400000` |
+| measured | **124.035 ms** — 74,421,588 cycles on the M55's 600 MHz DWT counter, **2.1 % under** the compiler's 76,000,592-cycle estimate |
+| run-to-run | **0.005 %** across the 15 invokes in `board/traces/round19_relu4d_pass.log` |
+
+**The arithmetic is deterministic and schedule-independent.** Two builds that
+share almost nothing — 1064 epochs with every buffer forced through memory, and
+the 448-epoch rewrite chained through the stream switch — give **one distinct
+100-token output** across all 23 fully captured runs — 9 and 14 respectively
+(`board/traces/round18_forcemem_pass.log`, `round19_relu4d_pass.log`; the
+latter records 15 invokes, the last cut off mid-line). Whatever
+residual disagreement the device has with the host, it is stable and it does not
+move when the schedule changes.
+
+Full record round by round — including the six rounds spent on a boot theory
+that was wrong, and the epoch numbers Rounds 9–17 quoted two too low:
+[`board/GATE4.md`](board/GATE4.md). Build, sign, flash and read:
+[`board/BUILD.md`](board/BUILD.md).
 
 ## The model
 
@@ -96,17 +153,29 @@ Both scales are **per-tensor**, so greedy CTC runs directly on the int8 logits �
 argmax needs no dequantisation. Vocabulary is the fast axis. Read the scale at
 runtime from `stai_network_get_inputs()[0]` rather than hardcoding it.
 
+**The two graph rewrites did not change this contract.** The deployed build's
+`stai_network.h` (`artifacts/compile/r19_relu4dall84/st_ai_output/stai_network.h:328-391`)
+carries the same formats, the same shapes and the same two scales, and the board
+reads `scale=8.297212 = 1 / 0.120522417128086` back at runtime.
+
 ## Layout
 
 ```
-model/      graph surgery, quantisation, and the NumPy reference frontend
-            (fe_reference.py is the C implementation's spec AND its test oracle)
+model/      graph surgery, quantisation, the two NPU workarounds, and the NumPy
+            reference frontend (fe.py is the C implementation's spec AND its
+            test oracle; fe_reference.py carries each constant's provenance)
 eval/       WER harness — window, int8, SNR, reverberation, gain, frontend ablation
 eval/results/  measured outputs of the above
-compile/    the audio-pool mpool + profile, and per-window compile evidence
+compile/    the audio-pool mpools + profile, the compile driver (gen_model.sh),
+            the build scorer (score_build.py), and per-window compile evidence
+firmware/   the C front end and C decoder, their generators and host tests, the
+            file-level work list, and the vendor-tree patches
+board/      the build/sign/flash recipe, the Gate 3 and Gate 4 records, the
+            blocker-2 reproducer, and the raw UART traces behind every board claim
 tokenizer/  1025-piece vocabulary and the SentencePiece model
 docs/       the feasibility assessment and upstream provenance
-artifacts/  (gitignored) rescued ONNX graphs, weights, compile reports
+artifacts/  (gitignored) rescued ONNX graphs, weights, per-tag compile
+            workspaces, the corpus blob, signed board images
 ```
 
 ## Accuracy, measured on the host
@@ -130,15 +199,87 @@ reports a clean NPU run. Peak-normalising the captured buffer to 0.9 restores
 5.83 %. Applying that gain *after* int16 truncation only recovers to 10.45 %,
 so it has to happen in the PDM/MDF decimator. See `eval/results/gain.log`.
 
+## Accuracy on the device
+
+64 dev-clean utterances — 844 reference words, 6,400 frames, the shipped graph's
+own calibration set excluded — fed to the board as **host-computed** int8
+features and scored host-side. Utterance 0 is byte-identical to the canned tensor
+every earlier board run used, so the corpus run carries its own control and
+reproduces it exactly. Trace and full score in `board/traces/round20_corpus64.*`.
+
+| | S | I | D | errors | words | WER | bootstrap 95 % |
+|---|---:|---:|---:|---:|---:|---:|---|
+| host vs reference | 45 | 4 | 1 | 50 | 844 | **5.92 %** | [3.99, 8.04] |
+| device vs reference | 42 | 3 | 4 | 49 | 844 | **5.81 %** | [3.91, 7.79] |
+
+Paired per utterance — the right test, because it removes the model's own errors
+— the corpus WER difference is **−0.118 points**, bootstrap 95 %
+**[−1.290, +1.144]**, **p = 0.897**; worse on 6 utterances, better on 10, tied on
+48. Per-frame argmax disagreement is **2.41 %**, and it sits exactly where the
+host is nearly undecided: **6.25× enriched** in the tightest decile of host
+top1−top2 margin and **zero** in the widest 20 %. **70.8 % of disagreeing frames
+(109 of 154) are blank-placement shifts that CTC collapses away.** 17 host frames
+(0.27 %) are **exact argmax ties**, where any arithmetic difference flips the
+token by index order alone.
+
+**What this does not license.** "No difference" is *not* established — the
+interval is 2.43 points wide, so any true difference smaller than that is
+invisible at n = 64. It is one corpus (clean read speech ≤ 7.69 s) and one decode
+(greedy CTC); nothing here speaks to noise, other speakers, or beam search. And
+it uses **host-computed features**, so it isolates the NPU and says nothing about
+the on-device front end.
+
 ## Next
 
-Gates 0–3 are closed. The next step is **Gate 4** — drop in the Citrinet network,
-feed it a host-computed feature vector, and compare on-device argmax token IDs
-against host ONNX Runtime. Remaining gates are planned to file level in
-[`firmware/WORKLIST.md`](firmware/WORKLIST.md) (6.5 developer-days; Gate 6's
-tokenizer is already built and byte-verified at 8,222 B). Gate definitions in
-[`docs/FEASIBILITY.md`](docs/FEASIBILITY.md#work-plan); what has changed since it
-was written is in [`docs/GATES-1-2.md`](docs/GATES-1-2.md) §2.
+Gates 0–4 and 6 are closed. The next step is **Gate 5** — the log-mel front end
+on the M55 — and it has three concrete obstacles, none of them speculative:
+
+1. **It has never run on the M55.** `firmware/src/citrinet_fe.c` reproduces
+   `model/fe.py` exactly on the host — **0 of 768,000 int8 values differ** over 12
+   utterances in the shipping CMSIS configuration, re-run 2026-08-19 with
+   `bash firmware/test/run_fe_parity.sh 12` — but its cost on silicon is
+   unmeasured. No on-device audio front end has ever been measured on this
+   machine. See [`firmware/FRONTEND.md`](firmware/FRONTEND.md) §5.
+2. **The stock capture path does not fit in RAM, by 2.6x.** At `COL = 800` the
+   vendor app's buffers come to about **2,679,312 B** against a **1,047,552 B**
+   region, and `AudioBM_proc_t` alone exceeds it by 2.07x — so it fails at
+   **link** time. Most of that is not the capture buffers at all: it is the two
+   `pCplxSpectrum` arrays inside `audioPreCtx` and `audioPostCtx`, 822,400 B
+   each. Gate 5 therefore has to **replace** ST's pre/post-processing contexts
+   rather than resize anything, which is what the utterance-based design wants
+   anyway — `firmware/src/citrinet_fe.c` is self-contained and uses neither,
+   and `firmware/FRONTEND.md` §7 budgets the replacement at 135-518 kB. The
+   current build links at 62 % only because `ai_model_config.h:47` still carries
+   the AED model's `COL = 96`.
+3. **Gain staging is unsolved, and it fails silently.** At −54 dBFS — where
+   ordinary desk speech lands on the DK's microphone — 97.9 % of mel bins fall
+   below NeMo's log guard and WER goes **5.83 % → 35.28 %** while every log
+   reports a clean NPU run (`eval/results/gain.log`). The gain has to be applied
+   in the MDF/PDM decimator: applying it after the int16 truncation only recovers
+   to 10.45 %.
+
+> **Corrected.** 1,026,240 B is `firmware/WORKLIST.md` §5.4's figure and it is a
+> **2.6x undercount**, because it counts `proc_buff` + `audio_out` + the ring buffer
+> and stops. `AudioBM_proc_t` also holds **two** processing contexts — `audioPreCtx`
+> and `audioPostCtx` (`Projects/GS/Inc/audio_bm.h:61-62`) — and each carries
+> `pCplxSpectrum[(NFFT/2+1)*2*COL]` of `float16_t` (`Projects/Dpu/audio_proc.h:64`,
+> NFFT 512). At COL 800 that is 257x2x800x2 = **822,400 B each, 1,644,800 B for the
+> pair**, giving ~**2,679,312 B** against a 1,047,552 B region.
+> The derivation is checked against the stock geometry: at COL 96 it yields
+> **268,048 B**, which is exactly the number `audio_bm.h:50` already records.
+> Two consequences: the overrun is 2.6x rather than marginal, and it fails at
+> **link** time, not in a runtime `malloc` as previously stated — `AudioBM_proc_t`
+> alone exceeds the region by 2.07x. Gate 5 must therefore **replace** ST's
+> pre/post-processing contexts, not resize the capture buffers; `citrinet_fe.c` is
+> already self-contained and uses neither. Note the current build links at 62 %
+> only because `ai_model_config.h:47` still carries the AED model's COL 96.
+
+Gate 7 (the LCD graft) and 7b (the button) follow, and neither can fail in a way
+that invalidates the model. Everything is planned to file level in
+[`firmware/WORKLIST.md`](firmware/WORKLIST.md); gate definitions in
+[`docs/FEASIBILITY.md`](docs/FEASIBILITY.md#work-plan); what changed since that
+document was written is in [`docs/GATES-1-2.md`](docs/GATES-1-2.md) §2 and
+[`firmware/WORKLIST.md`](firmware/WORKLIST.md) §0.
 
 ## Related
 

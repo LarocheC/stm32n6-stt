@@ -5,7 +5,16 @@
 This document records what was established before any firmware was written, what
 the original plan got wrong, and what remains genuinely unknown. Every number
 here was produced on this machine with ST Edge AI Core v4.0.1-20581 unless
-marked otherwise. **No number here was measured on the board.**
+marked otherwise. **No number in the body of this document was measured on the
+board** — it is a pre-firmware assessment and is kept as one.
+
+> **Status, 2026-08-19: gates 0-4 and 6 are closed; gate 5 is not.** The §3 work
+> plan below is the plan of record and its gate *definitions* still stand, but
+> the verdicts have moved and three of its numbers have been superseded on
+> silicon. The corrections are marked inline and collected in §3; the board
+> record is [`../board/GATE4.md`](../board/GATE4.md), and what changed since this
+> document was written is in [`GATES-1-2.md`](GATES-1-2.md) §2 and
+> [`../firmware/WORKLIST.md`](../firmware/WORKLIST.md) §0.
 
 ---
 
@@ -190,6 +199,23 @@ Ordered so that the cheapest question is asked first and the first thing that
 can contradict desk research is reached in about one developer-day. Steps 0–2
 need neither the board nor a new compile.
 
+**Where the gates stand, 2026-08-19.** The definitions below are unchanged; the
+verdicts are not.
+
+| gate | verdict | evidence |
+|---|---|---|
+| 0 — freeze the artifact set | **closed** | this repository |
+| 1 — WER at 8 s, fp32 vs int8 | **PASS**, +0.50 points | `eval/GATE1.md`, `eval/results/gate1_8s.json` |
+| 2 — recompile on ST's mpool | **PASS**, 618/0/0 at `0x70180000` | `compile/GATE2.md` |
+| 3 — build/sign/flash the stock app | **PASS** | `board/GATE3.md` |
+| 4 — Citrinet on silicon, canned features | **PASS**, 448 epochs, **124.0 ms measured** | `board/GATE4.md` |
+| 5 — log-mel front end on the M55 | **open** — host-exact, never executed on the M55 | `firmware/FRONTEND.md`, `docs/GATES-5-6.md` |
+| 6 — greedy CTC + detokeniser | **PASS**, 0 text disagreements / 9,226 chars | `firmware/test/results/gate6_ctc.json` |
+| 7 / 7b — LCD graft, button | not started | `firmware/WORKLIST.md` |
+
+Remaining effort, from `firmware/WORKLIST.md`'s roll-up with gates 4 and 6
+struck: **4.5 developer-days** (Gate 5 3 d, Gate 7 1.5 d, 7b folded in).
+
 **Gate 0 — freeze the artifact set (1 h).** Already done by this commit: the
 scripts, graphs, tokenizer and compile evidence are out of `/tmp` and under
 version control. *Stop if* the NGC `.nemo` SentencePiece vocabulary does not
@@ -208,6 +234,16 @@ cheap accuracy gate.
 > check ("check overlap later") and it was never done. Overlap is unlikely but
 > unproven, and calibrating on evaluation audio is precisely what makes a
 > quantisation look free when it is not. See `model/README.md`.
+>
+> **Correction — this paragraph named the wrong script.** `quant_real.py`
+> calibrates the **4 s** graph. The shipped 8 s graph `q800_real.onnx` is
+> calibrated by **`model/q800.py`**, with a different filter (`4.0 <= d <= 7.5`),
+> a different slice (`[:48]`) and therefore a different 48 utterances; the
+> canonical reconstruction is `eval/sets.py:cal_800()`. Gate 1 ran the check on
+> all three sets and the answer did not change — `cal_800` overlaps nothing at
+> all, while `cal_400` overlaps six evaluation sets and no published number is
+> contaminated. But anyone reasoning about overlap from this paragraph would have
+> excluded the wrong utterances. `eval/GATE1.md` §1; `board/GATE4.md` Round 20.
 
 **Gate 2 — recompile against the *firmware's* mpool, not the zoo's (30 min).**
 ST's audio application places octoFlash at **0x70180000**; `compile/audio_strict.mpool`
@@ -234,6 +270,25 @@ exactly where `preproc_dpu.c` puts it, dump argmax token ids over UART. *Pass:*
 on-device token ids match host ONNX Runtime argmax, and wall time is within ~2×
 of 91.2 ms. **This is the first point where silicon can contradict desk research.**
 
+> **CLOSED, and it did contradict desk research — twice.** It took twenty rounds,
+> not half a day. Two Neural-ART defects had to be found on the board and worked
+> around in the ONNX graph: a **stride-2 depthwise** convolution stalls the NPU
+> forever (`model/fold_stride2.py`), and an **activation accelerator driving a
+> convolution accelerator's data port** through the stream switch stalls forever
+> at 36 sites (`model/break_relu_chain.py`). Both workarounds are bit-exact
+> (`max|diff| = 0` over 3,075,000 elements) and the second is *faster* than the
+> graph that stalled. The deployed build is **448 epochs, 0 SW, 0 hybrid, 300 kB
+> cpuRAM2 + 425 kB npuRAM6, no PSRAM, 9.726 MB of weights at `0x70400000`**, and
+> it measures **124.035 ms** — inside the ~100–250 ms band predicted in §5, and
+> 2.1 % under the compiler's own cycle estimate.
+>
+> The pass criterion as written was not met and should not have been: on the
+> canned tensor the device disagrees with host onnxruntime on 5 of 100 frames.
+> That was resolved by measuring rather than by arguing — 64 utterances, device
+> WER **5.81 %** against host **5.92 %**, paired difference −0.118 points,
+> bootstrap 95 % [−1.290, +1.144], p = 0.897. "No difference" is *not*
+> established; the interval is 2.43 points wide. `board/GATE4.md` Rounds 19-20.
+
 **Gate 5 — log-mel frontend on the M55, with the level self-test built in from
 the first line (2–3 d).** `LogMelSpectrogramColumn` (float32 variant, not
 `_q15_Q8`); n_fft 512, win 400 symmetric Hann, hop 160, 80 mels, Slaney norm,
@@ -243,8 +298,52 @@ features match `model/fe_reference.py` to within a few LSB of the int8 grid, and
 guard occupancy < 20 % on live speech. *Stop if* guard occupancy stays high
 after gain — the gain is in the wrong place in the chain.
 
+> **Correction: the name in that first sentence is inverted.**
+> `LogMelSpectrogramColumn_q15_Q8` **is** the float32 variant
+> (`feature_extraction.c:250-324`); `_q15_f16_Q8` is the float16 one
+> (`feature_extraction_f16.c:264`). The `q15` refers to the *input* PCM, not the
+> arithmetic. The instruction was right and the name was wrong.
+>
+> **And ST's function turned out not to be usable at all.** It clamps
+> non-positive mel energies to `FLT_MIN` and then takes `logf`, where NeMo adds
+> `2⁻²⁴` before the log. Swapping the clamp in and changing nothing else moves
+> **737,335 of 768,000 int8 values (96.01 %), max |Δ| 46 LSB**, floor −16.64 →
+> −87.34. `firmware/src/citrinet_fe.c` is therefore a self-contained float32
+> front end that does not use the ST library, and it reproduces `model/fe.py`
+> exactly: **0 of 768,000 int8 values differ** over 12 utterances in the shipping
+> CMSIS configuration. `firmware/FRONTEND.md` §2 and §5.
+>
+> **Still open, and this is the gate's real content:** none of it has run on the
+> M55, so its cost is unmeasured; the stock capture path does not fit in RAM
+> (1,026,240 B of buffers against a 1,047,552 B region, `firmware/WORKLIST.md`
+> §5.4); and the gain staging of §2(d) is unsolved.
+
+> **Corrected.** 1,026,240 B is `firmware/WORKLIST.md` §5.4's figure and it is a
+> **2.6x undercount**, because it counts `proc_buff` + `audio_out` + the ring buffer
+> and stops. `AudioBM_proc_t` also holds **two** processing contexts — `audioPreCtx`
+> and `audioPostCtx` (`Projects/GS/Inc/audio_bm.h:61-62`) — and each carries
+> `pCplxSpectrum[(NFFT/2+1)*2*COL]` of `float16_t` (`Projects/Dpu/audio_proc.h:64`,
+> NFFT 512). At COL 800 that is 257x2x800x2 = **822,400 B each, 1,644,800 B for the
+> pair**, giving ~**2,679,312 B** against a 1,047,552 B region.
+> The derivation is checked against the stock geometry: at COL 96 it yields
+> **268,048 B**, which is exactly the number `audio_bm.h:50` already records.
+> Two consequences: the overrun is 2.6x rather than marginal, and it fails at
+> **link** time, not in a runtime `malloc` as previously stated — `AudioBM_proc_t`
+> alone exceeds the region by 2.07x. Gate 5 must therefore **replace** ST's
+> pre/post-processing contexts, not resize the capture buffers; `citrinet_fe.c` is
+> already self-contained and uses neither. Note the current build links at 62 %
+> only because `ai_model_config.h:47` still carries the AED model's COL 96.
+
 **Gate 6 — greedy CTC + detokeniser (0.5 d).** Argmax over 1025 int8 values ×
 100 frames, collapse repeats, drop blank 1024, concatenate, `▁` → space. ~50 lines.
+
+> **CLOSED on the host.** `firmware/src/citrinet_ctc.c` against
+> `model/fe.py:greedy()` on 100 calibration-disjoint dev-clean utterances:
+> **0 text disagreements over 9,226 characters, 0 argmax disagreements over
+> 10,000 frames**, plus 480 synthetic logit matrices (39,972 of 48,000 frames
+> carrying a tied argmax) with 0 disagreements. Tokenizer tables are 8,222 B,
+> 8,757 B including code. The C decoder has **not** run on the M55.
+> `firmware/test/results/gate6_ctc.json`, `docs/GATES-5-6.md`.
 
 **Gate 7 — LCD graft (1–1.5 d).** Last, deliberately: it cannot fail in a way
 that invalidates the model.
@@ -260,9 +359,13 @@ Total 8–11 developer-days, with the risk front-loaded into gates 0–4 (~1.5 d
    on the first frontend commit. Mitigate with pre-STFT peak normalisation
    applied *before* int16 truncation, and refuse to invoke when >20 % of bins
    sit at the guard.
-2. **ST int8 ≠ ONNX Runtime int8.** Every accuracy number in this repo is ORT
-   QDQ semantics. The zoo's `RESULTS.md` records ST diverging at cosine 0.996
-   with a systematic +0.23 mean bias on a prior model. Detect at Gate 4.
+2. ~~**ST int8 ≠ ONNX Runtime int8.**~~ **Detected at Gate 4, and quantified.**
+   They do differ — 2.41 % of frames pick a different argmax — but the difference
+   is concentrated at near-ties (17 host frames of 6,400 are *exact* argmax ties)
+   and does not move WER measurably at n = 64: device 5.81 % vs host 5.92 %,
+   paired 95 % CI [−1.29, +1.14] points. It is also **deterministic and
+   schedule-independent**: two builds 616 epochs apart give one distinct
+   100-token output across 23 captured runs. `board/GATE4.md` Rounds 19-20.
 3. **Babble noise — i.e. the room the demo is given in.** WER at 5 dB SNR:
    white 22.3 %, pink 15.3 %, **babble 60.1 %**. Competing speech is the one
    noise type that destroys it, and demos happen in rooms full of talking
@@ -272,25 +375,49 @@ Total 8–11 developer-days, with the risk front-loaded into gates 0–4 (~1.5 d
 4. **Grouped-convolution mapping is undocumented.** The word "group" appears
    **zero times** in `stneuralart_operator_support.html` r1.3. All 107 grouped
    convolutions reaching hardware is an empirical property of compiler
-   4.0.1-20581 with no vendor commitment. Pin the toolchain; make the
-   628-epoch/0-SW compile a regression gate on any bump.
+   4.0.1-20581 with no vendor commitment. Pin the toolchain; make the compile a
+   regression gate on any bump. **The constant to pin is now 448 epochs / 0 SW /
+   0 hybrid / 0 `ACTIV→CONVACC` links**, on `q800_relu4d_all.onnx` — and both NPU
+   defects Gate 4 found are also properties of this compiler build, so a bump has
+   to be re-checked against `compile/score_build.py`, not just against the epoch
+   table.
 5. **OTP fuses, and two flash workflows that overwrite each other.** Fuse
    blowing is permanent and this board's state is unverified. Separately,
    flashing the demo overwrites the external-flash weights that `zoo measure`
    also uses. Adopt a strict "measure, then flash demo, never interleave" rule,
-   or give each workflow its own offset.
+   or give each workflow its own offset. **Both halves have since been settled.**
+   The OTP was read before anything was flashed and word 124 already reads
+   `0x00018000`, so Gate 3 carried no irreversible action (`board/OTP.md`). And
+   the offsets *were* separated: `compile/stt_audio.mpool` moves the weight blob
+   to `0x70400000`, which gives the application 3 MB instead of the 512 kB ST's
+   own mpool leaves between `0x70100000` and the weights — and the Citrinet
+   signed image does not fit 512 kB (`compile/gen_model.sh:59-68`).
+   `board/flash_and_verify.sh:40-48` now refuses an image that would run into the
+   weight blob; before that check existed, it silently overwrote it.
 
 ---
 
 ## 5. Genuinely unknown — only silicon settles these
 
-- **Real inference latency.** 91.2 ms is a *scheduler* estimate. It models the
-  octoFlash weight stream but excludes epoch-transition overhead; ~15 µs/epoch
-  from prior board work implies roughly +9.4 ms at 628 epochs. Nothing on this
-  machine has ever streamed 10 MB of weights, and the 1.6× cost figure is
-  extrapolated well beyond its 1.4 MB of evidence. Honest band: **~100–250 ms**.
-  Settle with `stedgeai validate --mode target -d serial:/dev/ttyACM0`.
-- **On-device int8 fidelity.** See risk 2.
+- ~~**Real inference latency.**~~ **SETTLED at 124.035 ms.** The honest band
+  below was **~100–250 ms**, and the measurement lands in it. The graph that runs
+  is not the 628-epoch one this document costed, though: it is the 448-epoch
+  rewrite of Gate 4, whose own scheduler estimate is 76,000,592 cycles, and the
+  board comes in **2.1 % under** that. The epoch-transition-overhead worry did
+  not materialise — measured is *below* estimate, not above. Run-to-run spread is
+  0.005 % over 15 invokes. `board/GATE4.md` Round 19.
+  > *Original text:* "91.2 ms is a *scheduler* estimate. It models the octoFlash
+  > weight stream but excludes epoch-transition overhead; ~15 µs/epoch from prior
+  > board work implies roughly +9.4 ms at 628 epochs. Nothing on this machine has
+  > ever streamed 10 MB of weights, and the 1.6× cost figure is extrapolated well
+  > beyond its 1.4 MB of evidence. Honest band: ~100–250 ms."
+- ~~**On-device int8 fidelity.**~~ **MEASURED, and it is not a problem at this
+  sample size.** Over 64 utterances the device's WER is 5.81 % against the host's
+  5.92 %; the paired 95 % interval [−1.290, +1.144] contains zero. Per-frame
+  argmax disagreement is 2.41 %, 6.25× enriched in the tightest decile of host
+  logit margin, zero in the widest 20 %, and 70.8 % of it is blank-placement
+  shifts CTC collapses away. **Not** established: "no difference" — the interval
+  is 2.43 points wide. See risk 2, and `board/GATE4.md` Round 20.
 - **M55 log-mel cost.** Nobody on this machine has measured *any* on-device
   audio frontend — every prior deployment fed the NPU from the host over serial.
   Estimates range 6–15 ms with no local measurement behind them. DWT-time it.
@@ -298,10 +425,12 @@ Total 8–11 developer-days, with the risk front-loaded into gates 0–4 (~1.5 d
   triangular filters cost ~500 MAC/frame against 20,560 for a dense 80×257 matmul.
 - **The DK microphone's real acoustic behaviour.** Every degradation above is
   simulated — synthetic RIRs, one real 0.1 s RIR, LibriSpeech-derived babble.
-- **Whether the audio app enables npuRAM3/4/5.** If `Int_Mem_Config()` does, the
-  pool widens from 1,507,328 B toward ~2.88 MB and the 12 s window stops being a
-  memory question. Read `Projects/Common/misc_toolbox.c` after cloning. At 8 s
-  this does not matter.
+- ~~**Whether the audio app enables npuRAM3/4/5.**~~ **It does** —
+  `Int_Mem_Config()` at `Projects/GS/Src/audio_bm.c:741-759` clocks SRAM2..SRAM6
+  — but `stm32n6.mpool` does not declare them as pools, so the compiler cannot
+  place activations there. Declaring them would widen 1,507,328 B → 2,883,584 B (`docs/MEMORY-MAP.md:44`; the 2,884,608 in `WORKLIST.md:77` is 1,024 B out)
+  and invalidate the 618/0/0 evidence. At 8 s it does not matter: the deployed
+  build uses 725 kB of the existing pool. `firmware/WORKLIST.md` §0.
 
 ---
 

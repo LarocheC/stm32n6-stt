@@ -65,5 +65,20 @@ directly**: it compares on-device argmax token IDs against host ONNX Runtime on
 the same canned input. If Gate 4 diverges, drop `--Oauto-sched` and re-run before
 looking anywhere else.
 
-**Regression constant: 628 epochs / 0 SW / 0 hybrid / 625 KB / `0x70180000`.**
-Any toolchain bump must reproduce it.
+> **Gate 4 reported, and the flag is exonerated.** The device's token output is
+> **schedule-independent**: two builds 616 epochs apart — one with
+> `--force-all-in-out-to-mem`, one without — give a single distinct 100-token
+> vector across 23 captured runs (`board/GATE4.md` Round 19). Whatever the
+> residual 2.41 % per-frame disagreement with onnxruntime is, it does not move
+> when the schedule does, so it is not a scheduling defect and `--Oauto-sched`
+> is not implicated. Round 19 also measured `--force-all-in-out-to-mem` *without*
+> `--Oauto-sched` at 1052 epochs but **more** cycles than with it.
+
+~~**Regression constant: 628 epochs / 0 SW / 0 hybrid / 625 KB / `0x70180000`.**~~
+**Superseded.** The deployed graph is `q800_relu4d_all.onnx`, not
+`q800_real.onnx`, and the mpool is `compile/stt_audio.mpool`, not ST's. The
+constant to reproduce on a toolchain bump is **448 epochs / 0 SW / 0 hybrid /
+0 `ACTIV→CONVACC` / 300 kB cpuRAM2 + 425 kB npuRAM6 / `0x70400000`**, checked by
+`compile/score_build.py`. The old constant still holds for `q800_real.onnx` on
+`compile/st_audio.mpool` and is worth keeping as the second regression case,
+because it is the one Gate 2 measured.

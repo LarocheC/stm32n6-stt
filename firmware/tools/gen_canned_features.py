@@ -9,15 +9,21 @@ the runtime, or cache coherency.
 
     python firmware/tools/gen_canned_features.py [utterance_key]
 
-Run from the repo root with the zoo venv active.
+Needs the zoo venv for numpy/librosa/scipy/soundfile/onnxruntime; paths are taken
+from this file's own location, so it runs from any working directory.
 """
-import json, sys, importlib.util
+import json, os, sys, importlib.util
 import numpy as np, soundfile as sf, onnxruntime as ort
 
-REPO = "."
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCALE = 0.120522417128086          # compile/reports/g800_st_autosched/io_contract.h
 T, NMEL, NVOCAB, BLANK = 800, 80, 1025, 1024
 LEAD_IN = 4800                     # samples of silence before speech, as eval/ does
+
+# recs.json's 'f' paths name a sibling repo that does not exist; the audio lives
+# in this repo's corpus/.  Same remap as firmware/tools/gen_corpus.py:48-50.
+STALE_PREFIX = "/home/claroche/stm32n6-tts/corpus/"
+LIVE_PREFIX  = os.path.join(REPO, "corpus") + "/"
 
 # fe.py carries a hardcoded scratchpad path for the vocab; load it with that patched
 src = open(f"{REPO}/model/fe.py").read()
@@ -30,9 +36,9 @@ exec(compile(src, "fe.py", "exec"), fe.__dict__)
 key = sys.argv[1] if len(sys.argv) > 1 else "1272-128104-0000"
 recs = json.load(open(f"{REPO}/eval/results/recs.json"))
 rec = next(r for r in recs if r["k"] == key)
-path = rec["f"].replace(
-    "/tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/adv/",
-    f"{REPO}/corpus/")
+path = rec["f"].replace(STALE_PREFIX, LIVE_PREFIX)
+if not os.path.exists(path):
+    sys.exit("missing audio: %s (from %s)" % (path, rec["f"]))
 
 wav, sr = sf.read(path)
 assert sr == 16000, sr

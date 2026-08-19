@@ -13,10 +13,32 @@ From the upstream ONNX export to a compiled Neural-ART network.
 1. fetch      OpenVoiceOS/stt_en_citrinet_256_gamma_0_25_onnx -> model.onnx
 2. mkstatic.py T      pin length + audio_signal to [1, 80, T]   -> static_T.onnx
 3. clean.py in out    four graph rewrites (below)               -> clean_T.onnx
-4. quant_real.py      quant_pre_process + static QDQ int8       -> qT_real.onnx
-5. fold_stride2.py    move stride 2 off the depthwise convs     -> qT_fold.onnx
-6. stedgeai generate  --target stm32n6 --st-neural-art          -> network.c + weights
+4. q800.py            quant_pre_process + static QDQ int8       -> q800_real.onnx
+5. fold_stride2.py    move stride 2 off the depthwise convs     -> q800_fold.onnx
+6. break_relu_chain.py  keep each Relu on the 4-D tensor        -> q800_relu4d_all.onnx
+7. compile/gen_model.sh  stedgeai generate + deployment checks   -> network.c + weights
 ```
+
+**Step 4 is per-window, and the scripts are not interchangeable.** `q800.py`
+calibrates the shipped 8 s graph; `quant_real.py` calibrates the **4 s** graph and
+`q1200.py` the 12 s one. They use different duration filters and different
+slices, so they select different utterances:
+
+| script | product | filter | seed | slice | n |
+|---|---|---|---:|---|---:|
+| **`q800.py`** | **`q800_real.onnx`** — the shipped graph | **`4.0 <= d <= 7.5`** | **7** | **`[:48]`** | **48** |
+| `quant_real.py` | `q400_real.onnx` | `d <= 3.5` | 7 | `[300:364]` | 64 |
+| `q1200.py` | `q1200_real.onnx` | `5.0 <= d <= 11.5` | 7 | `[:48]` | 48 |
+
+Verified against the scripts themselves (`model/q800.py:7-9`,
+`quant_real.py:7-10`, `q1200.py:7-9`) and against `eval/sets.py:cal_800()`,
+which is the canonical reconstruction the disjointness check runs on. Earlier revisions of this file and of `docs/FEASIBILITY.md` named
+`quant_real.py` as the calibrator for the shipped model; that was wrong, and
+anyone reasoning about calibration/evaluation overlap from it would exclude the
+wrong 48 utterances. See `eval/GATE1.md` §1 and `board/GATE4.md` Round 20.
+
+Steps 5 and 6 are the two Gate 4 workarounds and are both bit-exact; step 6 is
+described in the section below and in `board/GATE4.md` Round 19.
 
 > **`fold_stride2.py` is the exception to the path warning above.** It takes its
 > paths from its own location and defaults to the repository's `artifacts/onnx/`,
@@ -77,9 +99,46 @@ level between `ORT_DISABLE_ALL` and `ORT_ENABLE_ALL` *does* change the decoded
 transcript of `sample1.flac` ("for fortnight" vs "for a fortnight"), while the
 fold changes not one of 102,500 float32 values at either level.
 
-**Blocker 2 is not addressed by this script.** `Conv2D_853` — an ordinary
-`group=1, k=[1,1], s=[1,1]` pointwise convolution, one of 126 identical ones —
-still stalls. See `board/GATE4.md` Round 17.
+**Blocker 2 is not addressed by this script** — `model/break_relu_chain.py` is.
+This paragraph used to name `Conv2D_853`, an ordinary `group=1, k=[1,1], s=[1,1]`
+pointwise convolution, as the second stalling operator. **That identification was
+wrong**: the board's epoch trace prints a 0-based counter while atonn's
+`epoch_num` starts at 2, so every epoch number in Rounds 9-17 is two too low and
+the stalling operator is `Conv2D_859`, a **depthwise** convolution
+(`board/GATE4.md` Round 18). See the next section.
+
+## `break_relu_chain.py` — Gate 4 blocker 2
+
+An **activation** accelerator whose output drives a **convolution** accelerator's
+data input through the stream switch (`ACTIV 1 -> CONVACC 0/1/2 port 0`) stalls
+the NPU forever. atonn produces that configuration at 36 sites, because it
+canonicalises every convolution to 2-D and so wraps each 1-D convolution in a
+`Reshape` 3D<->4D pair; the inserted `Reshape` separates the `Relu` from its
+producing convolution, leaving the compiler nothing to chain backwards to, so it
+chains the `Relu` forwards into its consumer instead.
+
+The fix keeps the `Relu` on the 4-D tensor, so atonn's own
+`fuse_consecutive_reshapes` / `eliminate_nop_reshape` cancel the pair it inserted
+against ours and the `Relu` ends up adjacent to its producer:
+
+```
+DQ -> Reshape([0,0,-1,1]) -> Relu -> Q -> DQ -> Reshape([0,0,-1]) -> Conv
+```
+
+`Reshape` does not change values, so the rewrite is exact by construction. Sites
+are discovered, not hardcoded, and any site whose `Relu` producer is not a `Conv`
+is skipped — rewriting one of those *creates* a defect the baseline did not have
+(`board/GATE4.md` Round 19).
+
+Measured, 84 sites: **448 epochs against the baseline's 618**, 0 SW, 0 hybrid,
+300 kB cpuRAM2 against 500 kB, `ACTIV->CONVACC` epochs 36 -> 0, and
+`max|diff| = 0` over 3,075,000 output elements. The weight blob is byte-identical
+(`md5 c81d84a7a9cbff549bfa9fa4df8923ff`), so only the application image needs
+reflashing. On the board: **124.035 ms**, against 194.0 ms for the
+`--force-all-in-out-to-mem` workaround it replaces, with identical token output.
+
+`model/verify_rewrite.py` is the shared checker; `model/repro_blocker2.py` builds
+the 9-node reproducer in `board/REPRO-blocker2.md`.
 
 ## What `clean.py` does, and why each rewrite is needed
 
@@ -145,4 +204,11 @@ touch. **`cal_800` — the calibration set of the shipped 8 s model, built by
 
 Note also that `quant_real.py` builds the **4 s** model. The 8 s and 12 s graphs
 use `q800.py` / `q1200.py`, whose calibration sets use different duration
-filters and a different slice. See `eval/GATE1.md` §1.
+filters and a different slice — the table under *Order* above. See
+`eval/GATE1.md` §1.
+
+This is not academic. `firmware/tools/gen_corpus.py` calls `eval/sets.py:cal_800()`
+to exclude the shipped graph's own calibration utterances from the Gate 4 device
+corpus, and reports what it removed (`excluded 48 cal_800 keys, 142 for the union
+of all three cal sets, from a 1789-utterance pool`). Reading the calibration set
+off `quant_real.py` instead would have excluded the wrong 48.

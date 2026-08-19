@@ -3,6 +3,19 @@
 Status: **both host-complete, neither has executed on the M55.** One adversarial
 finding is a **must-fix before integration** (§2.1). Board untouched throughout.
 
+> **Update, 2026-08-19.** Gate 6 is **closed** on that evidence
+> (`firmware/test/results/gate6_ctc.json`: 0 text disagreements over 9,226
+> characters). Gate 5 is **not** — everything below still stands, and §4's
+> integration list is now actionable because **Gate 4 has reported**: the graph
+> executes on the NPU in 124.035 ms and the device is not measurably less
+> accurate than the host over 64 utterances (`board/GATE4.md` Rounds 19-20).
+> Two things in §4 changed as a result. §4.3's runtime scale is confirmed on
+> silicon — the board reads back `scale=8.297212 = 1 / 0.120522417128086`. And
+> §4.8's "512 KiB app slot" is **no longer the geometry**: the Citrinet weight
+> blob moved to `0x70400000` (`compile/stt_audio.mpool`) precisely because the
+> app does not fit 512 KiB, so the CI assertion is against 3 MB, with
+> `board/flash_and_verify.sh:40-48` as the enforcing check.
+
 Deliverables: `firmware/src/citrinet_fe.c` + `firmware/inc/citrinet_fe.h` +
 `firmware/inc/citrinet_fe_tables.h`; `firmware/src/citrinet_ctc.c` +
 `firmware/inc/citrinet_ctc.h` + `firmware/inc/citrinet_vocab.h`.
@@ -239,7 +252,8 @@ and RAM footprints, warning-clean cross-compilation. Everything below is
 
 ## 4. Integration, once Gate 4 reports
 
-Do §4.0 before anything else.
+**Gate 4 has reported** (`board/GATE4.md`), so this list is live. Do §4.0 before
+anything else.
 
 **4.0 — apply the two guard fixes (§2.1, §2.2).** Change
 `CITRINET_FE_GUARD_MAX_FRAC` from `0.20f` to a value re-derived from the n=80
@@ -303,7 +317,7 @@ carries a generic name and was created by the Gate 6 track (targets `selftest`,
 
 `/home/claroche/stm32n6-deployment-zoo` was **not modified**
 (`git -C … status --porcelain` returns 0 lines). Everything is staged under
-`/home/claroche/stm32n6-tts/zoo-contrib/`; all of it was validated against a
+`/home/claroche/stm32n6-stt/zoo-contrib/`; all of it was validated against a
 scratch copy using the zoo's own loaders.
 
 | file | what it is | human action |

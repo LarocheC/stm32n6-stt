@@ -11,6 +11,15 @@ Full write-ups: [`eval/GATE1.md`](../eval/GATE1.md), [`compile/GATE2.md`](../com
 Firmware plan: [`firmware/WORKLIST.md`](../firmware/WORKLIST.md).
 Pool arithmetic: [`docs/MEMORY-MAP.md`](MEMORY-MAP.md).
 
+> **This document stops at Gate 2 and is not updated past it.** Gates 3, 4 and 6
+> have since closed; the board record is [`board/GATE4.md`](../board/GATE4.md) and
+> the current state of every gate is in [`../README.md`](../README.md). Two Gate 2
+> numbers below were superseded on silicon: the deployed graph is **448 epochs**,
+> not 618, and its weight blob is based at **`0x70400000`**, not `0x70180000`.
+> Neither changes any verdict here — both are consequences of the two NPU defects
+> Gate 4 found, and Gate 2's pass criterion (the report's flash base matches the
+> mpool) is still the check that catches a mismatch.
+
 ---
 
 ## 1. Verdicts
