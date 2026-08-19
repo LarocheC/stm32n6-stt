@@ -2130,3 +2130,29 @@ That is the only acceptable proof for a generator, and it is the same lesson
 Round 18 opened with. The fallback generator is kept as
 `firmware/tools/gen_corpus_alt.py`; it writes to `corpus_alt.*` so it can never be
 confused with the flashed blob, and its header says so.
+
+## A footnote that matters: 17 frames are exact ties
+
+The sidecar carries the host's top1−top2 margin for all 6,400 frames. **17 of them
+(0.27 %) have a margin of exactly zero** — the host's own argmax is a coin flip
+decided by index order, and *any* arithmetic difference flips the token. A further
+49 frames (0.77 %) are under 0.5 and 120 (1.88 %) under 1.0.
+
+Against that, the device's 154 disagreeing frames — 2.41 %, of which 70.8 % are
+collapsed away by CTC — are the expected consequence of two implementations of the
+same int8 arithmetic disagreeing near ties, not evidence of a defective NPU. It is
+the same conclusion the margin-enrichment table reaches from the other direction.
+
+## Two documentation defects found on the way
+
+- **`model/README.md` and `docs/FEASIBILITY.md` name the wrong calibration script
+  for the shipped 8 s model.** Both point at `quant_real.py`, which builds the
+  **4 s** graph. `eval/GATE1.md` §1 is explicit that the 8 s graph is calibrated by
+  `model/q800.py`, and `eval/sets.py:cal_800()` is the canonical reconstruction.
+  Anyone reasoning about calibration/evaluation overlap from the README would
+  exclude the wrong 48 utterances.
+- **`firmware/tools/gen_canned_features.py:33-35` remaps a prefix that no longer
+  matches anything.** It rewrites an obsolete scratchpad path, while `recs.json`
+  now carries `/home/claroche/stm32n6-tts/corpus/...`; the script would fail on any
+  utterance rather than silently mis-resolve. `gen_corpus.py` remaps the real
+  prefix and exits on a missing file.
