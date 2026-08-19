@@ -193,6 +193,13 @@ The panel shows `HOLD USER1 TO TALK`. Hold the blue **USER1** button, speak,
 release. You get the transcript, a spectrogram of what you just said, and
 `fe … ms  npu … ms  … dBFS  guard …%  gain …`.
 
+![What a working board looks like](docs/images/board-transcript.jpg)
+
+This is what a healthy run looks like, and it doubles as a checklist: a
+transcript, a spectrogram with visible formant structure and a dark zero-filled
+tail, `fe`/`npu` near 133/140 ms, a peak comfortably inside −20…−5 dBFS with no
+`CLIP`, and `guard` somewhere in the tens of percent rather than 0 % or 90 %.
+
 The UART is on the ST-LINK VCP at **14400 8N1** — an unusual rate, and it is
 ST's, not a typo (`Projects/GS/Inc/app_config.h`). `board/read_uart.py` reads it.
 

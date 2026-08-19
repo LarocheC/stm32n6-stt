@@ -4,6 +4,11 @@ Push-to-talk English speech recognition running entirely on an STM32N6570-DK:
 microphone → log-mel on the Cortex-M55 → **Citrinet-256 CTC encoder on the
 Neural-ART NPU** → greedy CTC decode → text on the 800×480 LCD.
 
+![Citrinet-256 running on an STM32N6](docs/images/citrinet-on-n6.png)
+
+<sub>*Artwork, not a photograph — the board drawn here is not an N6570-DK. The
+real thing is below.*</sub>
+
 ### → [**QUICKSTART.md**](QUICKSTART.md) — clone, build, flash, talk
 
 Note before you start: `vendor/` (ST's packages) and `artifacts/` (4.8 GB of
@@ -12,6 +17,21 @@ git**. QUICKSTART §1–2 says how to get both. Everything this project *wrote* 
 in the clone.
 
 ## Status
+
+![The board transcribing live speech](docs/images/board-transcript.jpg)
+
+<sub>An STM32N6570-DK, eight seconds after the button was released. The header is
+the idle prompt; below it the transcript of what was just said, then the log-mel
+spectrogram the encoder was actually fed, then the status line. Everything on
+that line is measured, not estimated: **`fe 133ms`** is the log-mel front end on
+the Cortex-M55 and **`npu 140ms`** is the whole Citrinet-256 encoder on the
+Neural-ART NPU, both per-invocation cycle-counter reads at 600 MHz.
+**`guard 41%`** is the fraction of mel bins below the `2⁻²⁴` log floor — it sits
+in the evaluation corpus's own range because push-to-talk zero-fills the tail
+(`firmware/FRONTEND.md` §18); before that change every live capture read 0 %.
+**`-11.4dBFS`** and **`gain -4`** are where the AGC settled, mid-plateau, with no
+`CLIP` flag. The spectrogram is on an absolute scale, so its dark right-hand
+third is the zero-filled tail and the blue floor under the speech is the room.</sub>
 
 **Feasibility settled, GO. Gates 0–7b are closed — the project is complete.** The model
 has been exported, shape-frozen, quantised to int8 on real speech, compiled
