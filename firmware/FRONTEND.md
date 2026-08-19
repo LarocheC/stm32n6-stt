@@ -1167,3 +1167,63 @@ every boot spent ~12 minutes base64-ing itself up the UART before the loop
 continued. It is now behind `-DGATE7_PCM_DUMP`. The real cost is 3.05× the
 payload, not 1.33×, because `my_printf` emits an ANSI reset per call and the dump
 calls it once per four characters.
+
+
+---
+
+## 18. Gate 7b — push to talk, and the distribution finally matches — 2026-08-19
+
+`board/traces/round30_gate7b_ptt.log`.
+
+```
+# gate7b: USER1 resting level 0; pressed = the other one
+# <<< captured 66880 samples (4.18 s), tail zero-filled   guard 47%  CLIPPED: fast attack  gain 2 -> -1
+# <<< captured 48320 samples (3.02 s), tail zero-filled   guard 63%  gain -1 -> -4
+# <<< captured 69120 samples (4.32 s), tail zero-filled   guard 50%  gain -4 -> -6
+```
+
+Hold `USER1`, speak, release. The take ends on release, so a 3 s sentence is a 3 s
+recording.
+
+### The zero-filled tail closed a training-distribution gap
+
+**Guard occupancy went from 0 % to 47-63 %**, against the evaluation corpus's
+35.6 %. Every live capture up to here filled all 128,000 samples with room noise
+while the corpus holds 2-8 s of speech and then *exact digital silence* (§12).
+Push-to-talk with a zeroed tail reproduces the corpus's shape, and the transcripts
+improved with it.
+
+This is the first change in §§10-18 that closed a gap between the deployment and
+the model's **training** distribution rather than a gap in the instrumentation.
+Everything before it — the AGC targets, the level sweeps, the SNR work — was
+measuring the deployment. This changed what the model is shown.
+
+### And it vindicates a detail that looked fussy
+
+Raw `guard_below` now reads 63 %, above `CITRINET_FE_GUARD_MAX_FRAC`'s 50 %, yet
+`rc` stayed 0 on every take. That is `citrinet_fe.c`'s `guard_fraction()`
+subtracting the exactly-zero bins before testing the threshold. In §12 that
+subtraction was the thing that revealed the corpus's 35.6 % to be mostly padding;
+here it is what makes the refusal criterion behave correctly under push-to-talk —
+refusing a *quiet* capture without refusing a *short* one.
+
+### Two design choices worth keeping
+
+**The microphone runs continuously.** The old loop did `Record` → 400 ms settle →
+capture → `Stop` per utterance; under push-to-talk that settle would swallow the
+first 400 ms of every take. The MDF filter now runs forever and arming only gates
+the appender, so there is no latency between the press and the recording — and
+`HAL_MDF_SetGain()` wants `HAL_MDF_STATE_ACQUISITION`, which is now permanently
+true, so a gain change applies at once instead of at the next `Record`.
+
+**The button polarity is discovered, not assumed.** `BSP_PB_Init` configures
+`GPIO_PULLDOWN` with `GPIO_MODE_IT_FALLING`, which is self-contradictory for an
+active-high button, so neither is trusted: the resting level is sampled at
+start-up, "pressed" is whatever differs, and the level is printed. It came back 0
+and worked first try. Polled rather than interrupt-driven, because hold-to-talk
+needs a level and not an edge.
+
+Level, RMS and the octave histogram are computed over the spoken samples only —
+the zero tail would deflate RMS and swamp the histogram's `h[0]`.
+
+**Gates 0-7b are closed.**

@@ -6,7 +6,7 @@ Neural-ART NPU** → greedy CTC decode → text on the 800×480 LCD.
 
 ## Status
 
-**Feasibility settled, GO. Gates 0–7 are closed.** The model
+**Feasibility settled, GO. Gates 0–7b are closed — the project is complete.** The model
 has been exported, shape-frozen, quantised to int8 on real speech, compiled
 against the STM32N6 audio application's real memory geometry, and scored for
 accuracy at the window it will actually ship at. **The full 800-frame
@@ -239,8 +239,11 @@ the 800×480 panel** — a blue header, the decoded text word-wrapped in Font20,
 a live stats line (`fe 133ms npu 140ms  -5.0dBFS  guard 0%  gain 2`). The LCD
 needed no PSRAM: AXISRAM3/4/5 are contiguous and the mpool claims none of them,
 so the 768,000 B framebuffer sits at `0x34200000` with the audio buffers above
-it. **7b, the button, is what remains**, and the stock app has already done its
-plumbing (`firmware/WORKLIST.md` §7b).
+it. **7b is closed too**: hold `USER1`, speak, release. The take ends on release and
+the tail is zero-filled, which moved guard occupancy from 0 % to 47–63 % against
+the evaluation corpus's 35.6 % — the first change that closed a gap against the
+model's *training* distribution rather than against the instrumentation
+(`firmware/FRONTEND.md` §18).
 
 ### What Gate 5 actually cost, against what this section predicted
 

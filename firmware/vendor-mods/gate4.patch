@@ -131,7 +131,7 @@ index d4ebc45..8162f80 100644
  LD_FLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS)
  LD_FLAGS += -Wl,--cref -Wl,--gc-sections
 diff --git a/Projects/GS/Src/audio_bm.c b/Projects/GS/Src/audio_bm.c
-index 8e3d175..acad96b 100644
+index 8e3d175..cb07a59 100644
 --- a/Projects/GS/Src/audio_bm.c
 +++ b/Projects/GS/Src/audio_bm.c
 @@ -34,6 +34,30 @@
@@ -404,7 +404,7 @@ index 8e3d175..acad96b 100644
  
    /* by default processing is active */
    AudioProcIsOn = true;
-@@ -138,9 +344,1239 @@ void init_bm(void)
+@@ -138,9 +344,1307 @@ void init_bm(void)
    * @param  None
    * @retval None
    */
@@ -1267,6 +1267,7 @@ index 8e3d175..acad96b 100644
 + * first utterance that actually decodes something, rather than on every window.
 + * The FNV-1a at the end covers the raw bytes, so a dropped character during
 + * those four minutes is detected rather than silently written into a .wav. */
++#ifdef GATE7_PCM_DUMP
 +static int g5m_dumped;
 +
 +static void g5m_dump_pcm(uint32_t utt, const int16_t *pcm)
@@ -1295,6 +1296,34 @@ index 8e3d175..acad96b 100644
 +  my_printf("# PCM END utt %lu fnv1a ", (unsigned long)utt);
 +  g5_hex8(g5_fnv1a(p, n));
 +  my_printf("\r\n");
++}
++#endif /* GATE7_PCM_DUMP */
++
++/* Gate 7b -- push to talk.
++ *
++ * BSP_PB_Init(BUTTON_USER1, BUTTON_MODE_EXTI) configures GPIO_PULLDOWN with
++ * GPIO_MODE_IT_FALLING (stm32n6570_discovery.c), which is self-contradictory for
++ * an active-high button, so neither the pull nor the edge is worth trusting.
++ * Sample the resting level once at start-up and call "pressed" whatever differs
++ * from it. That is immune to the polarity question and needs no schematic.
++ *
++ * Polled, not interrupt-driven: hold-to-talk needs a level, not an edge, and the
++ * loop has nothing else to do. */
++#define G5M_DEBOUNCE_MS   20u
++#define G5M_MIN_HOLD_MS  400u
++
++static uint32_t g5m_btn_idle;
++
++static int g5m_btn_raw(void)
++{
++  return (int)BSP_PB_GetState(BUTTON_USER1);
++}
++
++static int g5m_btn_down(void)
++{
++  const int a = g5m_btn_raw();
++  HAL_Delay(G5M_DEBOUNCE_MS);
++  return (a == g5m_btn_raw()) ? (a != (int)g5m_btn_idle) : 0;
 +}
 +
 +static volatile uint32_t g5m_w;        /* samples written, 0..CITRINET_FE_NSAMPLES */
@@ -1429,26 +1458,39 @@ index 8e3d175..acad96b 100644
 +  g7_transcript("", "waiting for the first utterance", UTIL_LCD_COLOR_ST_GRAY);
 +#endif
 +
++  /* The microphone now runs CONTINUOUSLY and arming only gates the appender.
++   * The old per-utterance Record/Stop cycle needed a 400 ms settle for the MDF
++   * high-pass and the gain change, which under push-to-talk would swallow the
++   * first 400 ms of every utterance. Running the filter forever removes the
++   * settle entirely, and HAL_MDF_SetGain() wants HAL_MDF_STATE_ACQUISITION
++   * anyway, which is now always true. */
++  g5m_arm = 0;
++  g5m_w   = 0;
++  if (BSP_ERROR_NONE != BSP_AUDIO_IN_Record(1, (uint8_t *)audio_acq_ctx.acq_buf,
++                                            CAPTURE_BUFFER_SIZE * sizeof(int16_t)))
++  {
++    my_printf("# BSP_AUDIO_IN_Record failed -- stopping\r\n");
++    return;
++  }
++  HAL_Delay(G5M_SETTLE_MS);
++  if (HAL_OK != HAL_MDF_SetGain(&haudio_in_mdf, gain))
++    my_printf("# HAL_MDF_SetGain(%d) refused\r\n", gain);
++
++  BSP_PB_Init(BUTTON_USER1, BUTTON_MODE_GPIO);
++  g5m_btn_idle = BSP_PB_GetState(BUTTON_USER1);
++  my_printf("# gate7b: USER1 resting level %lu; pressed = the other one\r\n",
++            (unsigned long)g5m_btn_idle);
++
 +  int16_t *const pcm = (int16_t *)GATE5_PCM_RAM;
 +
 +  for (uint32_t utt = 0; ; utt++)
 +  {
-+    my_printf("\r\n# ---- utterance %lu, MDF gain %d ----\r\n",
++    my_printf("\r\n# ---- utterance %lu, MDF gain %d: hold USER1 ----\r\n",
 +              (unsigned long)utt, gain);
-+
-+    g5m_arm = 0;
-+    g5m_w   = 0;
-+    if (BSP_ERROR_NONE != BSP_AUDIO_IN_Record(1, (uint8_t *)audio_acq_ctx.acq_buf,
-+                                              CAPTURE_BUFFER_SIZE * sizeof(int16_t)))
-+    {
-+      my_printf("# BSP_AUDIO_IN_Record failed -- stopping\r\n");
-+      return;
-+    }
-+    /* only legal once the filter is in ACQUISITION, hence after Record() */
-+    if (HAL_OK != HAL_MDF_SetGain(&haudio_in_mdf, gain))
-+      my_printf("# HAL_MDF_SetGain(%d) refused\r\n", gain);
-+
-+    HAL_Delay(G5M_SETTLE_MS);
++#ifdef GATE7_LCD
++    g7_banner("HOLD USER1 TO TALK", UTIL_LCD_COLOR_ST_GRAY_LIGHT);
++#endif
++    while (!g5m_btn_down()) { }
 +
 +    g5m_w   = 0;
 +    g5m_arm = 1;
@@ -1458,7 +1500,9 @@ index 8e3d175..acad96b 100644
 +    g7_flush_rows(G7_SPEC_Y, G7_SPEC_H);
 +#endif
 +    BSP_LED_On(LED_GREEN);
-+    my_printf("# >>> SPEAK NOW, %d s\r\n", (int)(CITRINET_FE_NSAMPLES / CITRINET_FE_SR));
++    const uint32_t t_press = HAL_GetTick();
++    my_printf("# >>> RECORDING, release USER1 to stop (max %d s)\r\n",
++              (int)(CITRINET_FE_NSAMPLES / CITRINET_FE_SR));
 +#ifdef GATE7_LCD
 +    /* The wait loop was eight seconds of __NOP(). Spend them on the meter: peak
 +     * over each 100 ms of newly arrived samples, read from g5m_w without
@@ -1467,6 +1511,12 @@ index 8e3d175..acad96b 100644
 +      uint32_t last = 0u, clip_seen = 0u;
 +      while (g5m_arm)
 +      {
++        if (g5m_btn_raw() == (int)g5m_btn_idle &&
++            (HAL_GetTick() - t_press) > G5M_MIN_HOLD_MS)
++        {
++          g5m_arm = 0;                    /* released: stop early */
++          break;
++        }
 +        const uint32_t w = g5m_w;
 +        if (w - last >= 1600u)
 +        {
@@ -1484,19 +1534,36 @@ index 8e3d175..acad96b 100644
 +      }
 +    }
 +#else
-+    while (g5m_arm) { __NOP(); }
++    while (g5m_arm)
++    {
++      if (g5m_btn_raw() == (int)g5m_btn_idle &&
++          (HAL_GetTick() - t_press) > G5M_MIN_HOLD_MS) { g5m_arm = 0; break; }
++    }
 +#endif
++    g5m_arm = 0;
 +    BSP_LED_Off(LED_GREEN);
-+    BSP_AUDIO_IN_Stop(1);
 +#ifdef GATE7_LCD
 +    g7_banner("PROCESSING", UTIL_LCD_COLOR_ST_YELLOW);
 +#endif
-+    my_printf("# <<< captured %lu samples\r\n", (unsigned long)g5m_w);
++    /* Zero-fill the tail. This is not merely tidy: it makes a live capture look
++     * like the evaluation corpus, whose 8 s windows hold 2-8 s of speech and
++     * exact digital silence after (FRONTEND.md section 12). The old free-running
++     * loop filled all 128,000 samples with room noise, which is a distribution
++     * the model never saw in training. */
++    const uint32_t n_spoken = g5m_w;
++    for (uint32_t i = n_spoken; i < (uint32_t)CITRINET_FE_NSAMPLES; i++) pcm[i] = 0;
++    my_printf("# <<< captured %lu samples (%lu.%02lu s), tail zero-filled\r\n",
++              (unsigned long)n_spoken,
++              (unsigned long)(n_spoken / CITRINET_FE_SR),
++              (unsigned long)((n_spoken % CITRINET_FE_SR) * 100u / CITRINET_FE_SR));
++    /* wait for release before the next prompt, so one long press is one take */
++    while (g5m_btn_raw() != (int)g5m_btn_idle) { }
 +
 +    /* ---- level, the number the whole gate turns on --------------------- */
 +    uint32_t peak = 0, clip = 0;
 +    double   acc  = 0.0;
-+    for (uint32_t i = 0; i < (uint32_t)CITRINET_FE_NSAMPLES; i++)
++    const uint32_t n_lvl = n_spoken ? n_spoken : 1u;   /* the zero tail is not signal */
++    for (uint32_t i = 0; i < n_lvl; i++)
 +    {
 +      const int32_t  v = (int32_t)pcm[i];
 +      const uint32_t a = (uint32_t)(v < 0 ? -v : v);
@@ -1504,7 +1571,7 @@ index 8e3d175..acad96b 100644
 +      if (a >= 32767u) clip++;
 +      acc += (double)v * (double)v;
 +    }
-+    const uint32_t rms = (uint32_t)sqrt(acc / (double)CITRINET_FE_NSAMPLES);
++    const uint32_t rms = (uint32_t)sqrt(acc / (double)n_lvl);
 +
 +    /* Magnitude histogram, one bin per octave: h[0] counts exact zeros, h[k]
 +     * counts 2^(k-1) <= |x| < 2^k.  Two questions it answers that peak and RMS
@@ -1517,7 +1584,7 @@ index 8e3d175..acad96b 100644
 +     * 7 dB between identical utterances. */
 +    uint32_t hist[17];
 +    for (uint32_t k = 0; k < 17u; k++) hist[k] = 0u;
-+    for (uint32_t i = 0; i < (uint32_t)CITRINET_FE_NSAMPLES; i++)
++    for (uint32_t i = 0; i < n_lvl; i++)
 +    {
 +      const int32_t  v = (int32_t)pcm[i];
 +      const uint32_t a = (uint32_t)(v < 0 ? -v : v);
@@ -1605,10 +1672,11 @@ index 8e3d175..acad96b 100644
 +      my_printf(" dBFS  guard %lu%% (diagnostic)%s  gain %d -> %d\r\n",
 +                (unsigned long)raw.guard_pct,
 +                clip > 0u ? "  CLIPPED: fast attack" : "", gain, ng);
++      if (ng != gain && HAL_OK != HAL_MDF_SetGain(&haudio_in_mdf, ng))
++        my_printf("# HAL_MDF_SetGain(%d) refused\r\n", ng);
 +      gain = ng;
 +    }
 +
-+    HAL_Delay(2000);
 +  }
 +}
 +#endif /* GATE5_MIC */
@@ -1644,7 +1712,7 @@ index 8e3d175..acad96b 100644
    time_stats_init();
  
    initAudioProc(&audio_proc_ctx);
-@@ -172,6 +1608,7 @@ void exec_bm(void)
+@@ -172,6 +1676,7 @@ void exec_bm(void)
  
    test_dump();
    my_printf("\n\r# End Processing\n\r");
@@ -1652,7 +1720,7 @@ index 8e3d175..acad96b 100644
  }
  #endif
  /**
-@@ -554,7 +1991,14 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
+@@ -554,7 +2059,14 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
  {
    if (Instance == 1U)
    {
@@ -1667,7 +1735,7 @@ index 8e3d175..acad96b 100644
    }
  }
  
-@@ -567,7 +2011,11 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
+@@ -567,7 +2079,11 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
  {
    if (Instance == 1U)
    {
@@ -1679,7 +1747,7 @@ index 8e3d175..acad96b 100644
    }
  }
  #if (CTRL_X_CUBE_AI_AUDIO_OUT==COM_TYPE_HEADSET)
-@@ -842,7 +2290,18 @@ static void Ext_Mem_Config(void)
+@@ -842,7 +2358,18 @@ static void Ext_Mem_Config(void)
      __BKPT(0);
    }
    BSP_XSPI_NOR_EnableMemoryMappedMode(0);

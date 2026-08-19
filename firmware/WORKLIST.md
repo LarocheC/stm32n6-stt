@@ -1080,6 +1080,22 @@ Three enabling changes on the audio side, all in the audio package's own files:
 
 Not a gate of its own; folded into Gate 5/7. **1 h, mechanical.**
 
+> **CLOSED, 2026-08-19.** `board/traces/round30_gate7b_ptt.log`,
+> `firmware/FRONTEND.md` §18. It was an hour, as estimated.
+>
+> **What the estimate missed is that it is not only a UI change.** Ending the take
+> on release and zero-filling the tail moved guard occupancy from 0 % to 47-63 %,
+> against the evaluation corpus's 35.6 % — because the corpus holds 2-8 s of
+> speech in an 8 s window followed by exact digital silence, and the free-running
+> loop had been filling all eight seconds with room noise. Push-to-talk makes a
+> live capture the same *shape* as the training material.
+>
+> Two things this section did not anticipate: the microphone now runs
+> continuously (a per-utterance `Record`/`Stop` costs a 400 ms settle that
+> push-to-talk would spend on the front of every take), and the button polarity is
+> sampled at start-up rather than assumed, because `BSP_PB_Init` sets
+> `GPIO_PULLDOWN` with `GPIO_MODE_IT_FALLING`, which cannot both be right.
+
 `BUTTON_USER1` **exists** in the audio package's own BSP and is already initialised and
 wired to an interrupt by the stock app.
 
