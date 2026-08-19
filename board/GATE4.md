@@ -1354,3 +1354,279 @@ zero software epochs and could absorb one.
 | speed | **as designed** — ~0.2 ms/epoch, cumulative 116 ms by epoch 256 against a 114.7 ms whole-graph estimate |
 | blocker 1: `Conv2D_70`, stride-2 depthwise | **fixed** — fold the stride into the following pointwise conv, bit-exact, free (Round 12) |
 | blocker 2: `Conv2D_853`, plain 1x1 | **open** — localised and schedule-invariant, cause not yet found |
+
+---
+
+# Round 18 — the stalling operator was misidentified. It is `Conv2D_859`, a depthwise convolution.
+
+Rounds 15 to 17 named `Conv2D_853` — an ordinary `group=1, k=[1,1]` pointwise
+convolution — as the second blocker, and then spent three rounds failing to find
+anything unusual about it. Nothing was unusual about it. **It is not the operator
+that stalls.**
+
+## The instrument, again
+
+`g4_epoch_cb()` prints `g4_ep_n` (`audio_bm.c:203`), a **software counter
+initialised to zero and incremented once per `POST_END`**. It is not
+`eb->epoch_num`. atonn's `epoch_num` starts at **2** — the first two entries of
+the graph are the parameter and input pseudo-epochs — so
+
+```
+trace epoch N  ==  ll_atonn_rt_epoch_block_array[N]  ==  epoch_num N+2
+```
+
+Every epoch number in rounds 9 through 17 is therefore **two too low**.
+
+The masks printed alongside it were always correct, and they are what settles it.
+`g4_num()` prints **decimal**, so the trace line `<352f019i393o098` carries
+`in_streng_mask = 393 = 0x189` and `out_streng_mask = 98 = 0x062` — exactly the
+values Round 15 quoted. Looking those masks up in the epoch-block table of the
+build that produced them:
+
+| build | trace printed | array index | real `epoch_num` | masks in the table |
+|---|---:|---:|---:|---|
+| folded, `--Omax-ca-pipe 4` | 352 | 352 | **354** | `in 0x189 / out 0x062` — matches Round 15 exactly |
+| folded, `--Omax-ca-pipe 1` (Round 17) | 349 | 349 | **351** | `in 0x0ca / out 0x031` — matches Round 17 exactly |
+
+In each build exactly one entry carries those masks, and in each it is the entry
+at the printed index. The identification is not an inference from one artifact;
+it is the same result twice, from two separately compiled schedules.
+
+## What actually stalls
+
+Both entries hold the same thing:
+
+```
+epoch_num 354 (ca-pipe 4)  /  epoch_num 351 (ca-pipe 1)
+    Relu_857               ACTIV_ACC_V2 1
+    Reshape_858
+    Conv2D_859_subm_0      CONV_ACC_V2 2
+    Conv2D_859_subm_1      CONV_ACC_V2 0
+    Conv2D_859_subm_2      CONV_ACC_V2 1
+```
+
+`Conv2D_859` is `group=256, kernel_shape=[7,1], strides=[1,1], pads=[3,0,3,0]` —
+**a depthwise convolution**, `/encoder/encoder.13/mconv.5/conv/Conv`. It is split
+into three submasks driven on three convolutional accelerators inside a single
+epoch.
+
+**Round 17's reasoning was sound and its conclusion holds — it just named the
+wrong node.** The fault does follow the operator across schedules: `Conv2D_859`
+carries it from `epoch_num 354` to `epoch_num 351` when the schedule changes,
+with different engine assignments both times. Everything Round 17 ruled out
+about `Conv2D_853` is moot, because `Conv2D_853` executes correctly. It sits at
+`epoch_num 352`, two epochs before the stall, and the board gets past it.
+
+Note also that **both blockers are depthwise convolutions.** Blocker 1 was
+`Conv2D_70`, `group=256, k=[3,1]`, stride 2. Blocker 2 is `group=256, k=[7,1]`.
+Round 16's "the operator form is not the discriminator this time" was an artifact
+of the misidentification.
+
+## The discriminator, and it has no counterexample
+
+Counting epochs that pack three or more `Conv..._subm_N` pieces into one epoch
+block, over all 628 epochs of the folded graph:
+
+| | |
+|---|---:|
+| epochs with **≥3** conv submasks | 37 |
+| of those, **below** `epoch_num 354` | **0** |
+| of those that also carry a `Relu` in the same epoch | 36 |
+| of those, below 354 | **0** |
+
+`epoch_num 354` is the **first epoch in the graph that ever programs three
+convolutional accelerators from one convolution**, and the board has never
+executed one. Every epoch it does execute successfully uses at most two.
+
+The control is inside the same Citrinet block. `Conv2D_850` is *also* a `k=7`
+`group=256` depthwise convolution, on the same tensor shape, six epochs earlier —
+and the compiler spreads its three submasks across **two** epochs:
+
+```
+epoch_num 348   Conv2D_850_subm_1  CONV_ACC_V2 0     Conv2D_850_subm_2  CONV_ACC_V2 3
+epoch_num 349   Conv2D_850_subm_0  CONV_ACC_V2 0     (with Conv2D_846 + its ca_pipe)
+epoch_num 354   Conv2D_859_subm_0/1/2  all three, one epoch   <- stalls
+```
+
+Same operator form, same shapes, same block. The one that is split across two
+epochs completes; the one packed into a single epoch does not.
+
+**The confound, stated plainly.** All 37 three-submask epochs lie at or above
+354, so "first occurrence" and "deepest part of the graph" coincide, and this
+round cannot separate them from the artifacts alone. What kills or confirms it is
+a build in which `Conv2D_859` is not split three ways — see below.
+
+## Refuted this round
+
+| hypothesis | verdict | what killed it |
+|---|---|---|
+| `Conv2D_853`'s requantisation multiplier is an outlier (Round 17's proposal) | **refuted** | its multiplier spans log2 −9.19 to −7.62; the 73 siblings proven to execute span **−32.30 to +0.04**. Inside the range at both ends. Rank 59 of 73 by minimum. Moot in any case — `Conv2D_853` is not the blocker |
+| the stalling epoch needs 4 input streaming engines | **refuted twice** | the premise came from the mis-looked-up epoch. The real masks are 3-in/1-out (ca-pipe 4) and 3-in/2-out (ca-pipe 1) — not invariant. And 39 epochs below the stall use ≥4 input engines and complete |
+| `ca_pipe` splitting across two conv accelerators | **refuted** | 175 epochs split, 75 of them below the stall. The exact unit pair `(CONV_ACC_V2 0, CONV_ACC_V2 3)` occurs in 70 epochs |
+| MACC magnitude | **refuted** | `epoch_num 354` is 358,400 MACs; `epoch_num 28` does 52,531,200 and completes |
+| live activation bytes / npuRAM6 pressure | **refuted** | 153,600 B in 3 non-overlapping aligned buffers, npuRAM6 at 33.5 %, rank 418 of 631 |
+| a unique `(in,out)` engine-mask pair | **refuted** | 46 % of all epochs have a mask pair that occurs exactly once. Unique is the norm |
+| descriptor fields (`batch_depth`, `kfilt_*`, `simd`, `vshift`, `frame_tot_cnt`) | **refuted** | every value `Conv2D_853` carries is shared with 31–73 executed siblings; `simd`, `vshift` and `kfilt_last` are uniform across all 126 |
+
+## A separate finding: the squeeze-excitation epochs are 26× to 103× over estimate
+
+Round 14 flagged epoch 7 as a 25× outlier and left it unexplained. Round 16
+found epochs 289, 317 and 345 at ~1,274,400 cycles and attributed them to "the
+heaviest operator of each repeating block, not an anomaly". **That attribution is
+wrong.** Those epochs are among the *lightest* the compiler estimates:
+
+```
+44 epochs carry estimated_tot_cycles = 49,152 / estimated_npu_cycles = 2,731
+they occur in PAIRS spaced 27-28 apart:  7,8  36,37  64,65 ... 289,290  317,318  345,346
+each pair is the squeeze-excitation block:
+    Conv -> Add(bias) -> Reshape -> Relu -> Reshape
+    Conv -> Add(bias) -> Reshape -> Sigmoid
+```
+
+against a whole-graph maximum estimate of 3,960,600. So epochs 7, 289, 317 and
+345 are not heavy operators; they are trivial ones that overrun their estimate by
+26× (and epoch 7 by 103×). The tensors are tiny — the SE branch reduces to 256
+values — so the cost is almost certainly fixed per-epoch overhead rather than
+computation. 44 epochs is enough to matter for throughput and it is worth
+settling once Gate 4 closes.
+
+(These indices are the compiler's `epoch_num`; Round 16's measured 289/317/345
+were trace numbers, hence `epoch_num` 291/319/347. The 28-epoch spacing and the
+pairing are what identify the family, and both match.)
+
+## Reproducibility, restored
+
+The scratchpad holding rounds 11-17's artifacts was wiped. Everything needed to
+continue has been regenerated and is now checked in rather than living in `/tmp`:
+
+| | |
+|---|---|
+| `model/fold_stride2.py` | the blocker-1 fold, discovering its sites rather than hardcoding them. **0 of 3,075,000 output elements differ over 30 random inputs**, max\|diff\| = 0; identical decoded transcript on real speech |
+| `compile/gen_model.sh` | the compile driver, preserving the **whole** workspace per tag — `network_c_info.json`, `*_OE_3_3_1_Q.json`, `network.csv`, the weight blob — which is exactly what was lost |
+| `board/BUILD.md` | build, sign (`-align` is mandatory), flash, and read, with the trace format decoded |
+| `firmware/vendor-mods/gate4.patch` | a real patch. The file it replaces contained no diff markers, stopped mid-function, and was rejected by both `patch(1)` and `git apply` — there had been no automated way to apply this step |
+| `artifacts/compile/g800_fold/` | the folded compile, reproducing Round 13: **628 epochs, 0 SW, 0 hybrid**, cpuRAM2 200 kB, npuRAM6 425 kB, no PSRAM, weights 9.726 MB at `0x70400000` |
+| `artifacts/compile/round17_capipe1_rescued/` | Round 17's `--Omax-ca-pipe 1` build, rescued from the vendor tree before step 6 of `apply_vendor_mods.sh` would have overwritten it. 616 blocks; it is what confirms the mask lookup above |
+
+`board/flash_and_verify.sh` and `board/probe_flashboot.sh` pointed at
+`/home/claroche/stm32n6-**tts**/`, which does not exist; they now derive the repo
+root from their own location. `compile/audio_profile.json` pointed its
+`memory_pool` at a wiped scratchpad.
+
+## Two candidate discriminators, and neither can be separated from the artifacts
+
+An adversarial re-check of the streaming-engine analysis produced a second
+property with no counterexample, and it is not the same set:
+
+| property | epochs in the graph | occurring **below** the stall |
+|---|---:|---:|
+| ≥3 `Conv..._subm_N` pieces in one epoch block | 37 | **0** |
+| ≥3 concurrent output streams into npuRAM6 | 45 | **0** |
+
+The first set is a strict subset of the second, and `epoch_num 354` is the first
+member of both. The eight epochs in the second set but not the first all lie
+above 354. **Nothing in the compiled artifacts can separate these two, because
+the graph never exercises either property before the point where it stops.**
+
+The coarser version of the second property — three output streams to *anywhere* —
+is refuted: `epoch_num 348` drives three (`out = 0x0c4`) and completes. That is
+the completion Round 15 recorded. Two of its three go to npuRAM6 and one to
+cpuRAM2; the stalling epoch's three all go to npuRAM6.
+
+## The experiment that separates them, and it is one flash
+
+Compiling the same folded graph with **ST's stock option string** — that is,
+dropping `--Oauto-sched`, which is `compile/GATE2.md`'s own shipping
+configuration and still gives **618 epochs, 0 SW, 0 hybrid** — rearranges the
+packing:
+
+```
+epoch_num 348   Conv2D_850_subm_0/1/2  + Identity     in 0x2a9 / out 0x146
+epoch_num 353   Conv2D_859_subm_0/1/2  + Relu_857     in 0x342 / out 0x031
+```
+
+`Conv2D_850` is the depthwise convolution that **completes** under
+`--Oauto-sched`, where its three submasks are spread across two epochs. Here they
+are packed into one, and it now precedes `Conv2D_859`.
+
+| the board stalls at trace | printed masks | conclusion |
+|---:|---|---|
+| **346** | `i681 o326` | the three-submask packing is causal. `Conv2D_859` was never special, and `Conv2D_850` stalls the moment it is packed the same way |
+| **351** | `i834 o049` | it is `Conv2D_859` specifically; the packing is incidental |
+| neither, runs to completion | — | the property belongs to the `--Oauto-sched` schedule itself |
+
+The two outcomes print different masks as well as different numbers, so the
+answer does not depend on trusting the epoch counter that caused this round's
+correction. Note cpuRAM2 rises to 500 kB without `--Oauto-sched` (Gate 2 measured
+exactly this), which is still clear of the FSBL.
+
+## The escape hatch, measured rather than assumed
+
+There is **no compiler option that pins a named node to software**. The full
+option set was enumerated from the `atonn` binary, including hidden options via
+the undocumented `--emit-options-md` / `--help-full`; `--node-processor-confs`
+is keyed by operator *kind*, not node name, and is a capability table rather than
+a placement directive.
+
+A single node *can* be forced to software by graph surgery, and it was measured
+on a real subgraph before being applied: replace the weight `DequantizeLinear`
+with a float32 initializer and the compiler emits `DequantizeLinear → Conv(float)
+→ QuantizeLinear` as three pure-SW epochs, leaving the int8 tensors either side
+untouched. `-DLL_ATON_SW_FALLBACK` is already in the build
+(`Projects/GS/Makefile:198`).
+
+For `Conv2D_859` this is cheap: the epoch is **358,400 MACs**, not the 13.1 M of
+the pointwise convolution that was wrongly blamed. `artifacts/onnx/q800_fold.onnx`
+with that rewrite applied verifies at **max|diff| = 0 over 820,000 output
+elements**.
+
+Two things that do *not* work, recorded so they are not retried:
+
+- `--onnx-omit-opt split_large_mask_conv` does remove every three-submask epoch,
+  but the depthwise convolutions then fall back wholesale: **755 epochs, 92 SW,
+  46 hybrid**. Not a deployment.
+- the `dilations=[2]` trick — a numerical no-op that makes the compiler emit
+  `SpaceToDepth → Conv → DepthToSpace` — applies only to `k=1` convolutions.
+  `Conv2D_859` is `k=7`, so it does not transfer.
+
+## Round 18 board runbook
+
+Three images are staged under `artifacts/images/`, each with its matching weight
+blob. Nothing needs building; flash, power-cycle, read.
+
+| image | build defines | what it answers |
+|---|---|---|
+| `baseline_fold/` | `-DGATE4_CANNED` | control. Does the regenerated folded graph still stall where Round 17 left it? |
+| `noauto_discriminator/` | `+ -DGATE4_BEACON -DGATE4_EPOCH_TRACE -DGATE4_EPOCH_FROM=330` | **the decisive one.** Stall at trace 346 (`i681 o326`) ⇒ the three-submask packing is causal; at trace 351 (`i834 o049`) ⇒ `Conv2D_859` specifically |
+| `float859_escape/` | `-DGATE4_CANNED` | the escape hatch. `Conv2D_859` in float on the M55, 4 SW epochs, 358,400 MACs. Should print `# GATE4 PASS` |
+
+Run `noauto_discriminator` first — it is the only one that produces new
+information regardless of outcome.
+
+```bash
+export PATH=/home/claroche/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin:$PATH
+CLI=STM32_Programmer_CLI
+EL=/home/claroche/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin/ExternalLoader/MX66UW1G45G_STM32N6570-DK.stldr
+IMG=artifacts/images/noauto_discriminator
+
+# switches BOTH RIGHT (development), then:
+$CLI -c port=SWD mode=UR --extload $EL -w $IMG/GS_Audio_N6_sign.bin 0x70100000
+$CLI -c port=SWD mode=UR --extload $EL -w $IMG/network_data.bin     0x70400000
+
+# switches BOTH LEFT (boot from flash), POWER CYCLE -- not the reset button
+python board/read_uart.py 120
+```
+
+Reading the trace: `<NNNfFFFiIIIoOOO>DDDDDDDD` where `NNN` is the **0-based
+execution counter** (add 2 for atonn's `epoch_num`), `FFF`/`III`/`OOO` are flags
+and the input/output streaming-engine masks **in decimal**, and `DDDDDDDD` is the
+epoch's cycle count from the PMU. A line that opens and never closes is the
+stall. Note `g4_num(..., 3)` prints only three digits, so a mask ≥ 1000 wraps —
+`i681` and `i834` are both safe, but do not trust a printed mask without checking
+it against the epoch-block table.
+
+`board/flash_and_verify.sh` reads from the vendored build tree rather than
+`artifacts/images/`, so it verifies whatever was built last; use it when you have
+just rebuilt, and the two `-w` commands above when flashing a staged image.
+Weights go at **`0x70400000`**, which is also the app-slot end to pass as the
+script's second argument.

@@ -1,0 +1,1566 @@
+# Gate 4 firmware instrumentation, as a real unified diff.
+#
+# firmware/apply_vendor_mods.sh does NOT apply this -- its closing note says the
+# gate4 audio_bm.c path is "applied separately", and the file it points at
+# (audio_bm.gate4.c.patch) is a truncated 80-line COPY of audio_bm.c's head, not
+# a diff, and not applicable by patch(1) or git apply.
+#
+# This file is that missing diff. It was recovered from the vendored tree, which
+# is a git clone of STM32N6-GettingStarted-Audio at tag v2.3.0 (46f1f97), by:
+#
+#   git -C vendor/STM32N6-GettingStarted-Audio diff -- \
+#       Projects/GS/Src/audio_bm.c Projects/GS/Inc/audio_bm.h \
+#       Projects/GS/Src/stm32n6xx_it.c Projects/GS/Inc/app_config.h
+#
+# Apply from the vendor root:
+#   git -C vendor/STM32N6-GettingStarted-Audio apply firmware/vendor-mods/gate4.patch
+#
+# Everything it adds is behind GATE4_CANNED / GATE4_BEACON / GATE4_EPOCH_TRACE,
+# so an unmodified `make bm` still builds ST's stock application.
+diff --git a/Projects/GS/Inc/app_config.h b/Projects/GS/Inc/app_config.h
+index 6ee31ce..d0710ff 100644
+--- a/Projects/GS/Inc/app_config.h
++++ b/Projects/GS/Inc/app_config.h
+@@ -57,7 +57,10 @@
+ #ifdef APP_DVFS
+   #define USE_UART_BAUDRATE               (14400) /* 14400 is max value in DVFS mode */
+ #else
+-  #define USE_UART_BAUDRATE               (14400) /* can up set up upto 921600 */
++  /* stm32n6-stt: 921600. The stock 14400 makes the ll_aton buffer dump take
++   * minutes to drain, which dominates every debug iteration. DVFS is off in
++   * this build, so the ceiling that forces 14400 does not apply. */
++  #define USE_UART_BAUDRATE               (14400)  /* 921600 breaks UART_Config at this clock -- measured */
+ #endif
+ 
+ #ifdef APP_BARE_METAL
+diff --git a/Projects/GS/Inc/audio_bm.h b/Projects/GS/Inc/audio_bm.h
+index 3c5cd91..a751b53 100644
+--- a/Projects/GS/Inc/audio_bm.h
++++ b/Projects/GS/Inc/audio_bm.h
+@@ -48,8 +48,16 @@ typedef struct _AudioBM_acq_t
+ 
+ typedef struct _AudioBM_proc_t
+ {
++#ifdef GATE4_CANNED
++  /* stm32n6-stt: the canned-feature path never touches the capture or playback
++   * buffers -- it feeds the NPU directly.  At the full size this struct is
++   * 268,048 B of .bss, which pushed the image to 99.0 % of the 1023 KB region. */
++  int16_t proc_buff[1];
++  int16_t audio_out[1];
++#else
+   int16_t proc_buff[PATCH_LENGTH];
+   int16_t audio_out[PATCH_LENGTH];
++#endif
+   AudioPreProcCtx_t audioPreCtx;
+   AudioPostProcCtx_t audioPostCtx;
+ #if (CTRL_X_CUBE_AI_AUDIO_OUT==COM_TYPE_HEADSET)
+diff --git a/Projects/GS/Src/audio_bm.c b/Projects/GS/Src/audio_bm.c
+index 8e3d175..861709d 100644
+--- a/Projects/GS/Src/audio_bm.c
++++ b/Projects/GS/Src/audio_bm.c
+@@ -34,6 +34,18 @@
+ #include "AudioCapture_ring_buff.h"
+ #include "preproc_dpu.h"                           /* Preprocessing includes  */
+ #include "postproc_dpu.h"                          /* Postprocessing includes */
++
++#ifdef GATE4_CANNED
++#include <string.h>
++#include "mcu_cache.h"
++#include "canned_features.h"
++#include "stai_network.h"
++#endif
++#ifdef GATE4_BEACON
++#include "ll_aton_NN_interface.h"
++#include "ll_aton_rt_user_api.h"
++#include "stai_aton_common.h"
++#endif
+ #include "ai_dpu.h"                                /* AI includes             */
+ #include "test.h"
+ #include "audio_bm.h"
+@@ -72,8 +84,15 @@ static bool AudioProcIsOn;
+ 
+ #ifdef APP_BARE_METAL
+ static AudioBM_acq_t  audio_acq_ctx;
++#ifdef GATE4_CANNED
++/* stm32n6-stt: the canned-feature path needs only the AI context.  The full
++ * AudioBM_proc_t is 205 KB of .bss for capture/preproc/postproc state that this
++ * path never touches, and the image was at 93 % of a 1023 KB region. */
++static AIProcCtx_t g4_aictx;
++#else
+ static AudioBM_proc_t audio_proc_ctx;
+ #endif
++#endif
+ #if (CTRL_X_CUBE_AI_AUDIO_OUT==COM_TYPE_HEADSET)
+ int16_t  playback_buf[PLAYBACK_BUFFER_SIZE] __NON_CACHEABLE;
+ #endif
+@@ -87,6 +106,133 @@ static const char *sAiAudioClassLabels[CTRL_X_CUBE_AI_MODEL_CLASS_NUMBER] = \
+   * @param  None
+   * @retval None
+   */
++#ifdef GATE4_BEACON
++/* A progress marker that owes nothing to printf.
++ *
++ * The whole print path -- LogPrintf -> vprintf -> newlib stdio -> _write (from
++ * the AI middleware's aiTestUtility.c, gated on _ioWriteAllowed) -- is a lot of
++ * machinery to trust when the symptom is "no bytes at all". This writes one
++ * character straight into USART1's transmit register and waits for it to leave
++ * the shift register. No buffer, no heap, no library, no flag.
++ *
++ * UART_Config() must have run. It only needs HAL_Init() and the clock config,
++ * so init_bm() calls it first when this is built. */
++static void beacon(char c)
++{
++  while ((USART1->ISR & USART_ISR_TXE_TXFNF) == 0U) { }
++  USART1->TDR = (uint32_t)(uint8_t)c;
++  while ((USART1->ISR & USART_ISR_TC) == 0U) { }
++}
++/* Hold each marker for ~2 s instead of emitting it once.
++ *
++ * Every negative result in this gate so far has been a timing artefact rather
++ * than a measurement: a one-shot marker emitted at boot lands inside the ~8 s
++ * usbipd re-attach gap and is simply not there to be read, and "0 bytes" then
++ * gets misread as "the board is dead". Holding turns the boot into a continuous
++ * stream -- UUUU1111222233334444... -- so the capture can start anywhere and the
++ * LAST character received names the last step that completed. No gap can hide
++ * it and no reset-button behaviour is assumed. */
++/* One character per marker.  This used to hold each marker for 20 x HAL_Delay(100)
++ * = 2 s so that a one-shot boot marker could not be lost in the ~8 s usbipd
++ * re-attach gap.  That job is now done once, by the HAL_Delay(12000) after
++ * UART_Config below, and the holds were costing ~32 s of wall clock per run --
++ * which is what made round 13 misread a fast graph as a slow one. */
++#define BEACON(c) beacon(c)
++
++/* ---- per-epoch trace ------------------------------------------------------
++ * Round 8 put the hang inside __ll_aton_stai_run_synchonously: no interrupt is
++ * trapped and no fault is raised, so the M55 is going round
++ *
++ *   do { r = LL_ATON_RT_RunEpochBlock(inst);
++ *        if (r == LL_ATON_RT_WFE) LL_ATON_OSAL_WFE(); } while (r != DONE);
++ *
++ * while an epoch it started never reports completion. This names that epoch.
++ *
++ * The runtime calls this once per epoch block with the block item, and the
++ * build already defines LL_ATON_EB_DBG_INFO, so `epoch_num` and the streaming
++ * engine masks are populated. Format is `<NNN` on start and `>` on end, so the
++ * last number printed WITHOUT a following `>` is the epoch that hung, and the
++ * masks printed with it say which engines it was waiting on.
++ *
++ * Raw USART1 writes only -- no printf, because this may run in ISR context. */
++#ifdef GATE4_EPOCH_TRACE
++static void g4_num(uint32_t v, int digits)
++{
++  uint32_t div = 1;
++  for (int i = 1; i < digits; i++) div *= 10u;
++  for (; div > 0u; div /= 10u) beacon((char)('0' + ((v / div) % 10u)));
++}
++
++/* The stai layer OVERWRITES any callback set with LL_ATON_RT_SetNetworkCallback()
++ * on every single run (ll_aton_stai_internal.c:417-425):
++ *
++ *   if (nn_context->callback != NULL)
++ *     LL_ATON_RT_SetNetworkCallback(inst, _stai_aton_internal_epoch_block_callback);
++ *   else
++ *     LL_ATON_RT_SetNetworkCallback(inst, NULL);
++ *
++ * and `_stai_aton_context.callback` is never assigned anywhere in the middleware
++ * -- there is no public per-network setter, only the runtime-wide
++ * stai_runtime_set_callback(), which feeds a different hook. So the documented
++ * epoch-callback path is dead unless the context field is set directly. That is
++ * what this does; stai then installs its own forwarder, which calls us. */
++static uint32_t g4_ep_t0;
++static uint64_t g4_ep_tot;
++static uint32_t g4_ep_n;
++
++/* Trace every epoch from GATE4_EPOCH_FROM onward, and only a cumulative total
++ * before that.  Printing costs ~14 ms per epoch at 14400 baud, so tracing all 628
++ * both distorts the timing and takes long enough that the capture window closes
++ * before the interesting region.  Rounds 9-10 named the first blocker this way;
++ * this is the same method aimed further in. */
++#ifndef GATE4_EPOCH_FROM
++#define GATE4_EPOCH_FROM 280u
++#endif
++
++static void g4_epoch_cb(void *cookie, const stai_event_type type, const void *payload)
++{
++  (void)cookie;
++  const LL_ATON_RT_EpochBlockItem_t *eb = (const LL_ATON_RT_EpochBlockItem_t *)payload;
++  if (type == (stai_event_type)LL_ATON_RT_Callbacktype_PRE_START)
++  {
++    /* Print BEFORE taking the timestamp.  Getting this backwards put an
++     * 18-character UART write inside the measured window -- 18 x 694 us at 14400
++     * baud with a TC wait each = 12.5 ms -- and produced the bogus "uniform
++     * 12.6 ms per-epoch penalty" of round 15. */
++    if (g4_ep_n >= GATE4_EPOCH_FROM)
++    {
++      beacon('\r'); beacon('\n'); beacon('<');
++      g4_num(g4_ep_n, 3);
++      if (eb != NULL)
++      {
++        beacon('f'); g4_num((uint32_t)eb->flags, 3);
++        beacon('i'); g4_num(eb->in_streng_mask, 3);
++        beacon('o'); g4_num(eb->out_streng_mask, 3);
++      }
++    }
++    g4_ep_t0 = (uint32_t)port_dwt_get_cycles();
++  }
++  else if (type == (stai_event_type)LL_ATON_RT_Callbacktype_POST_END)
++  {
++    uint32_t dt = (uint32_t)port_dwt_get_cycles() - g4_ep_t0;
++    g4_ep_tot += (uint64_t)dt;
++    if (g4_ep_n >= GATE4_EPOCH_FROM)
++    {
++      beacon('>'); g4_num(dt, 8);
++    }
++    else if ((g4_ep_n % 64u) == 0u)
++    {
++      beacon('\r'); beacon('\n'); beacon('E');
++      g4_num(g4_ep_n, 3); beacon('t'); g4_num((uint32_t)(g4_ep_tot / 600000u), 6);
++    }
++    g4_ep_n++;
++  }
++}
++#endif /* GATE4_EPOCH_TRACE */
++#else
++#define BEACON(c) do { } while (0)
++#endif
++
+ void init_bm(void)
+ {
+   /* Power on ICACHE */
+@@ -96,6 +242,19 @@ void init_bm(void)
+   __HAL_RCC_CPUCLK_CONFIG(RCC_CPUCLKSOURCE_HSI);
+   __HAL_RCC_SYSCLK_CONFIG(RCC_SYSCLKSOURCE_HSI);
+ 
++  /* No stall here.  An earlier version of this build spun 300M volatile
++   * iterations at this point to outlast the ~8 s usbipd re-attach gap, on the
++   * estimate that it would take ~25 s.  It took about NINE MINUTES: the caches
++   * are still off (SCB_EnableDCache is far below), so every iteration is an
++   * uncached AXISRAM load and store at HSI, on the order of 100 cycles rather
++   * than 5.  Two capture windows closed while the board was still counting,
++   * and both were misread as "silent".
++   *
++   * The observability problem is solved at the bench instead: open the serial
++   * port first, then press the board's RESET button.  That re-runs the boot
++   * from flash with the switches already LEFT and does not reset the ST-LINK,
++   * so there is no re-enumeration gap and a one-shot marker is observable. */
++
+   HAL_Init();
+ 
+   SystemClock_Config_Full();
+@@ -108,25 +267,60 @@ void init_bm(void)
+   fuse_vddio();
+ #endif
+ 
+-  MPU_Config();
+-  Int_Mem_Config();
+-  Ext_Mem_Config();
+-  NPU_Config();
+-  IAC_Config();
+-  SCB_EnableICache();
+-  SCB_EnableDCache();
++#ifdef GATE4_BEACON
++  /* Brought forward so every step below can report. UART_Config() depends only
++   * on HAL_Init() and SystemClock_Config_Full(), both already done. */
++  UART_Config();
++  /* One raw character, then a deterministic wait long enough to outlast the
++   * ~8 s usbipd re-attach after a power cycle.  HAL_Delay, not a spin loop:
++   * SysTick is running by now and this is accurate, where the hand-rolled
++   * volatile loop it replaces was wrong by a factor of twenty. */
++  beacon('u');
++  HAL_Delay(12000);
++  BEACON('U');
++#endif
++
++  MPU_Config();       BEACON('1');
++  Int_Mem_Config();   BEACON('2');
++  Ext_Mem_Config();   BEACON('3');
++  NPU_Config();       BEACON('4');
++#ifdef GATE4_RISAF
++  /* ST ship this function and never call it -- --gc-sections drops it from the
++   * image entirely. It opens the RISAF firewall for SRAM1/SRAM2, the two NPU
++   * master ports, SRAM3-6, FLEXMEM and OCTOSPI2.
++   *
++   * The defaults evidently permit whatever ST's own models touch: their AED
++   * graph puts every activation in npuRAM6 (AXISRAM6) and runs. Ours is the
++   * first graph in this project to allocate in cpuRAM2 (AXISRAM2), and it is
++   * the only structural difference left between the graph that completes an
++   * inference and the graph that enters stai_network_run() and never returns.
++   *
++   * Placed after NPU_Config() because the header is explicit that a peripheral
++   * must be clocked before its RISAF is programmed, and NPU_Config() is what
++   * enables the NPU clock. */
++  RISAF_Config();     BEACON('R');
++#endif
++  IAC_Config();       BEACON('5');
++  SCB_EnableICache(); BEACON('6');
++  SCB_EnableDCache(); BEACON('7');
+   port_dwt_init_imp();
+   SleepClks_init(); /* configures for sleep */
++  BEACON('8');
+ 
+   /* BSP inits */
++#ifndef GATE4_BEACON
+   UART_Config();
++#endif
+   BSP_PB_Init(BUTTON_USER1, BUTTON_MODE_EXTI);
+   BSP_PB_Init(BUTTON_TAMP, BUTTON_MODE_EXTI);
+   BSP_LED_Init(LED_GREEN);
+   BSP_LED_Init(LED_RED);
++  BEACON('9');
+ 
+-  /* configuration information on console */
++  /* configuration information on console.  This is the first thing that goes
++   * through printf, so 'D' arriving after '9' also proves the stdio path. */
+   displaySystemSetting();
++  BEACON('D');
+ 
+   /* by default processing is active */
+   AudioProcIsOn = true;
+@@ -138,9 +332,133 @@ void init_bm(void)
+   * @param  None
+   * @retval None
+   */
++
++#ifdef GATE4_CANNED
++/**
++ * Gate 4: prove the Citrinet graph on silicon with the microphone, the MDF
++ * decimator, the log-mel front end and the gain stage all removed from the
++ * comparison. Feeds one host-computed int8 tensor and prints the per-frame
++ * argmax, so any divergence from host ONNX Runtime is the model, the runtime,
++ * or cache coherency -- nothing else is in the path.
++ */
++static void gate4_canned(void)
++{
++  BEACON('E');
++  my_printf("\r\n# gate4: canned features, mic bypassed\r\n");
++  BEACON('L');
++
++
++  if (AiDPULoadModel(&g4_aictx) != DPU_OK)
++  {
++    BEACON('!');
++    my_printf("# gate4: AiDPULoadModel FAILED\r\n");
++    return;
++  }
++  BEACON('M');
++
++#ifdef GATE4_EPOCH_TRACE
++  /* stai_network * IS the _stai_aton_context (network_instance is its first
++   * member).  Setting .callback makes stai install its internal epoch forwarder
++   * on every run, which then calls g4_epoch_cb.
++   *
++   * Off by default: the trace emits ~20 characters per epoch and beacon() waits
++   * for USART_ISR_TC on each one, so at 14400 baud with the FIFO disabled it adds
++   * ~14 ms per epoch -- roughly 9 s across a 628-epoch graph.  Useful for finding
++   * a stalled epoch, useless while measuring one. */
++  {
++    _stai_aton_context *g4_ctx = (_stai_aton_context *)g4_aictx.p_network;
++    g4_ctx->callback = g4_epoch_cb;
++    g4_ctx->callback_cookie = NULL;
++    beacon(g4_ctx->callback != NULL ? 'K' : 'k');
++  }
++#endif
++
++  /* Repeat forever.  A one-shot print is unobservable on this bench: a power
++   * cycle detaches the USB device and usbipd takes ~8 s to re-attach, by which
++   * time the board has long since printed.  Looping also turns a single latency
++   * reading into a distribution, which is the number Gate 4 actually owes. */
++  for (uint32_t run = 0; ; run++)
++  {
++  my_printf("\r\n# ---- run %lu ----\r\n", (unsigned long)run);
++
++  int8_t *in  = (int8_t *) g4_aictx.p_stai_inputs[0];
++  int8_t *out = (int8_t *) g4_aictx.p_stai_outputs[0];
++  my_printf("# in=%p out=%p scale=%f off=%d\r\n", in, out,
++            (double)g4_aictx.input_Q_inv_scale,
++            (int)g4_aictx.input_Q_offset);
++
++  /* Clamp to the installed model's real input size so this harness can also be
++   * pointed at ST's own AED model as a control. The bytes are meaningless for a
++   * model that is not Citrinet; the only question asked in that case is whether
++   * AiDPUProcess() returns at all. */
++  uint32_t in_bytes = (uint32_t)STAI_NETWORK_IN_1_SIZE_BYTES;
++  if (in_bytes > (uint32_t)sizeof(kCannedFeatures)) in_bytes = (uint32_t)sizeof(kCannedFeatures);
++  memcpy(in, kCannedFeatures, in_bytes);
++  mcu_cache_clean_invalidate_range((uint32_t)in, (uint32_t)in + in_bytes);
++  my_printf("# fed %lu B of %d B input\r\n", (unsigned long)in_bytes,
++            (int)STAI_NETWORK_IN_1_SIZE_BYTES);
++
++  /* Cycle counter for the invoke.
++   *
++   * NOT DWT.  ai_device_adaptor.h:245 sets HAS_DWT_CTRL 0 for this part and maps
++   * port_dwt_get_cycles() to ARM_PMU_Get_CCNTR(): the Cortex-M55 counts cycles in
++   * the PMU, not the DWT, so reading DWT->CYCCNT here returned a number that only
++   * looked like a measurement.  port_dwt_init_imp() has already run in init_bm(). */
++  port_dwt_reset();
++
++  my_printf("# invoking...\r\n");
++  BEACON('\r'); BEACON('\n'); BEACON('I');
++  uint32_t t0 = (uint32_t)port_dwt_get_cycles();
++  AiDPUProcess(&g4_aictx);
++  uint32_t cycles = (uint32_t)port_dwt_get_cycles() - t0;
++  BEACON('O');
++  my_printf("# invoke returned\r\n");
++
++  /* the stock app never invalidates the output; the NPU writes it by another
++   * path and the M55 D-cache may hold stale lines. */
++  mcu_cache_invalidate_range((uint32_t)out,
++                             (uint32_t)out + (uint32_t)CANNED_N_FRAMES * CANNED_NVOCAB);
++
++  my_printf("# invoke %lu cycles = %d.%03d ms at %lu Hz\r\n",
++            (unsigned long)cycles,
++            (int)((uint64_t)cycles * 1000u / port_hal_get_cpu_freq()),
++            (int)(((uint64_t)cycles * 1000000u / port_hal_get_cpu_freq()) % 1000u),
++            (unsigned long)port_hal_get_cpu_freq());
++
++  uint32_t mismatches = 0;
++  const uint32_t out_bytes = (uint32_t)STAI_NETWORK_OUT_1_SIZE_BYTES;
++  const uint32_t n_frames  = (out_bytes >= (uint32_t)CANNED_N_FRAMES * CANNED_NVOCAB)
++                             ? (uint32_t)CANNED_N_FRAMES : 0u;
++  if (n_frames == 0u) { my_printf("# output too small for CTC argmax (control run)\r\n"); HAL_Delay(3000); continue; }
++  my_printf("# ids:");
++  for (uint32_t f = 0; f < n_frames; f++)
++  {
++    const int8_t *row = out + (uint32_t)f * CANNED_NVOCAB;
++    int8_t  best_v = row[0];
++    uint32_t best_i = 0;
++    for (uint32_t v = 1; v < CANNED_NVOCAB; v++)
++    {
++      if (row[v] > best_v) { best_v = row[v]; best_i = v; }
++    }
++    my_printf(" %lu", (unsigned long)best_i);
++    if (best_i != kExpectedTokens[f]) mismatches++;
++  }
++  my_printf("\r\n# mismatches %lu / %u\r\n",
++            (unsigned long)mismatches, (unsigned)CANNED_N_FRAMES);
++  my_printf(mismatches ? "# GATE4 FAIL\r\n" : "# GATE4 PASS\r\n");
++  HAL_Delay(3000);
++  }
++}
++#endif /* GATE4_CANNED */
++
+ void exec_bm(void)
+ {
+   bool cont = true;
++#ifdef GATE4_CANNED
++  (void)cont;
++  gate4_canned();
++  while (1) { __NOP(); }
++#else
+   time_stats_init();
+ 
+   initAudioProc(&audio_proc_ctx);
+@@ -172,6 +490,7 @@ void exec_bm(void)
+ 
+   test_dump();
+   my_printf("\n\r# End Processing\n\r");
++#endif /* GATE4_CANNED */
+ }
+ #endif
+ /**
+@@ -842,7 +1161,18 @@ static void Ext_Mem_Config(void)
+     __BKPT(0);
+   }
+   BSP_XSPI_NOR_EnableMemoryMappedMode(0);
++#ifndef GATE4_XSPI_PREFETCH
+   MODIFY_REG(XSPI2->CR, XSPI_CR_NOPREF, HAL_XSPI_AUTOMATIC_PREFETCH_DISABLE); /* Hotfix for xspi: no prefetch */
++#else
++  /* Leave the XSPI2 automatic prefetch ENABLED.
++   *
++   * ST disable it above as a "hotfix", with no note on what it fixes. The NPU
++   * streams every weight of this graph from this flash, and measured throughput
++   * is ~2000x the compiler's own estimate while scaling with epoch count rather
++   * than weight volume -- the signature of per-transaction cost, which is exactly
++   * what losing lookahead on sequential reads produces. board/GATE4.md round 13. */
++  MODIFY_REG(XSPI2->CR, XSPI_CR_NOPREF, 0U);
++#endif
+ 
+ #ifdef USE_EXT_SRAM
+   BSP_XSPI_RAM_Init(0);
+diff --git a/Projects/GS/Src/stm32n6xx_it.c b/Projects/GS/Src/stm32n6xx_it.c
+index 63f9fa6..b5a9e1d 100644
+--- a/Projects/GS/Src/stm32n6xx_it.c
++++ b/Projects/GS/Src/stm32n6xx_it.c
+@@ -27,6 +27,66 @@
+ #include "stm32n6570_discovery.h"
+ #include "stm32n6570_discovery_audio.h"
+ 
++/* ---- Gate 4 trap reporter -------------------------------------------------
++ * Almost every handler in this file is `g4_trap();` -- a deliberate trap for
++ * an interrupt ST does not expect. That means ANY unexpected interrupt hangs the
++ * CPU forever inside its ISR, with no fault and no output, which is exactly the
++ * signature of the Citrinet invoke that never returns.
++ *
++ * Rather than instrument 190 handlers, this reads IPSR -- which holds the active
++ * exception number -- and streams it out of USART1 forever, raw, with no printf
++ * and no buffering. Whatever number arrives names the interrupt that fired.
++ * Exception number = IRQn + 16 (so NPU0..NPU3 = 16+IRQn, HardFault = 3). */
++#ifdef GATE4_BEACON
++static void g4_putc(char c)
++{
++  while ((USART1->ISR & USART_ISR_TXE_TXFNF) == 0U) { }
++  USART1->TDR = (uint32_t)(uint8_t)c;
++  while ((USART1->ISR & USART_ISR_TC) == 0U) { }
++}
++static void g4_hex(uint32_t v)
++{
++  for (int i = 28; i >= 0; i -= 4)
++    g4_putc("0123456789abcdef"[(v >> i) & 0xFU]);
++}
++void g4_trap(void)
++{
++  uint32_t xn = __get_IPSR() & 0x1FFU;
++  /* Fault status, so a HardFault names itself instead of just its number.
++   * CFSR splits into MMFSR/BFSR/UFSR; HFSR bit30 = FORCED (escalated from a
++   * configurable fault); MMFAR/BFAR hold the offending address when the
++   * matching VALID bit is set. */
++  uint32_t cfsr  = *(volatile uint32_t *)0xE000ED28U;
++  uint32_t hfsr  = *(volatile uint32_t *)0xE000ED2CU;
++  uint32_t mmfar = *(volatile uint32_t *)0xE000ED34U;
++  uint32_t bfar  = *(volatile uint32_t *)0xE000ED38U;
++  uint32_t sp    = __get_MSP();
++  for (;;)
++  {
++    g4_putc('\r'); g4_putc('\n'); g4_putc('!');
++    g4_putc((char)('0' + ((xn / 100U) % 10U)));
++    g4_putc((char)('0' + ((xn / 10U) % 10U)));
++    g4_putc((char)('0' + (xn % 10U)));
++    g4_putc(' '); g4_putc('C'); g4_hex(cfsr);
++    g4_putc(' '); g4_putc('H'); g4_hex(hfsr);
++    g4_putc(' '); g4_putc('M'); g4_hex(mmfar);
++    g4_putc(' '); g4_putc('B'); g4_hex(bfar);
++    /* a window of the stack: the exception frame (r0-r3,r12,lr,pc,xpsr) is in
++     * here, so the stacked PC identifies the faulting instruction */
++    g4_putc(' '); g4_putc('S'); g4_hex(sp);
++    for (int i = 0; i < 16; i++)
++    {
++      g4_putc(' '); g4_hex(*(volatile uint32_t *)(sp + (uint32_t)(i * 4)));
++    }
++    for (volatile uint32_t d = 0; d < 8000000U; d++) { }
++  }
++}
++#else
++void g4_trap(void) { while (1) {} }
++#endif
++/* -------------------------------------------------------------------------- */
++
++
+ /******************************************************************************/
+ /*            Cortex-M55 Processor Exceptions Handlers                        */
+ /******************************************************************************/
+@@ -50,9 +110,7 @@ void NMI_Handler(void)
+ void HardFault_Handler(void)
+ {
+   /* Go to infinite loop when Hard Fault exception occurs */
+-  while (1)
+-  {
+-  }
++  g4_trap();
+ }
+ #endif
+ 
+@@ -64,9 +122,7 @@ void HardFault_Handler(void)
+ void MemManage_Handler(void)
+ {
+   /* Go to infinite loop when Memory Manage exception occurs */
+-  while (1)
+-  {
+-  }
++  g4_trap();
+ }
+ 
+ /**
+@@ -77,9 +133,7 @@ void MemManage_Handler(void)
+ void BusFault_Handler(void)
+ {
+   /* Go to infinite loop when Bus Fault exception occurs */
+-  while (1)
+-  {
+-  }
++  g4_trap();
+ }
+ 
+ /**
+@@ -91,9 +145,7 @@ void BusFault_Handler(void)
+ void UsageFault_Handler(void)
+ {
+   /* Go to infinite loop when Usage Fault exception occurs */
+-  while (1)
+-  {
+-  }
++  g4_trap();
+ }
+ #endif
+ 
+@@ -105,9 +157,7 @@ void UsageFault_Handler(void)
+ void SecureFault_Handler(void)
+ {
+   /* Go to infinite loop when Secure Fault exception occurs */
+-  while (1)
+-  {
+-  }
++  g4_trap();
+ }
+ 
+ /**
+@@ -128,9 +178,7 @@ void SVC_Handler(void)
+   */
+ void DebugMon_Handler(void)
+ {
+-  while (1)
+-  {
+-  }
++  g4_trap();
+ }
+ 
+ /**
+@@ -141,9 +189,7 @@ void DebugMon_Handler(void)
+ #ifdef APP_BARE_METAL
+ void PendSV_Handler(void)
+ {
+-  while (1)
+-  {
+-  }
++  g4_trap();
+ }
+ #endif
+ 
+@@ -195,751 +241,751 @@ void EXTI0_IRQHandler(void)
+ /*--- patch-- */
+ /* void SysTick_Handler(void)
+ {
+- while (1) {};
++ g4_trap();
+ } */
+ void PVD_PVM_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void DTS_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void RCC_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void LOCKUP_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void CACHE_ECC_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TCM_ECC_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void BKP_ECC_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void FPU_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void RTC_S_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TAMP_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void RIFSC_TAMPER_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void IAC_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void RCC_S_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void RTC_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void IWDG_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void WWDG_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ /*
+  void EXTI0_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }*/
+ void EXTI1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void EXTI2_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void EXTI3_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void EXTI4_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void EXTI5_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void EXTI6_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void EXTI7_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void EXTI8_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void EXTI9_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void EXTI10_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void EXTI11_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void EXTI12_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ /* void EXTI13_IRQHandler(void)
+ {
+- while (1) {};
++ g4_trap();
+ } */
+ void EXTI14_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void EXTI15_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void SAES_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void CRYP_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void PKA_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HASH_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void RNG_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void MCE1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void MCE2_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void MCE3_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void MCE4_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void ADC1_2_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void CSI_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void DCMIPP_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void PAHB_ERR_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ /* void NPU0_IRQHandler(void)
+ {
+- while (1) {};
++ g4_trap();
+ } */
+ void NPU1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void NPU2_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void NPU3_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void CACHEAXI_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void LTDC_LO_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void LTDC_LO_ERR_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void DMA2D_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void JPEG_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void VENC_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GFXMMU_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GFXTIM_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GPU2D_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GPU2D_ER_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void ICACHE_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel0_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel2_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel3_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel4_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel5_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel6_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel7_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel8_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel9_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel10_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel11_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel12_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel13_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel14_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void HPDMA1_Channel15_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ /* void GPDMA1_Channel0_IRQHandler(void)
+ {
+- while (1) {};
++ g4_trap();
+ } */
+ void GPDMA1_Channel1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ /* void GPDMA1_Channel2_IRQHandler(void)
+ {
+- while (1) {};
++ g4_trap();
+ } */
+ void GPDMA1_Channel3_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GPDMA1_Channel4_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GPDMA1_Channel5_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GPDMA1_Channel6_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GPDMA1_Channel7_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GPDMA1_Channel8_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GPDMA1_Channel9_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GPDMA1_Channel10_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GPDMA1_Channel11_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GPDMA1_Channel12_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GPDMA1_Channel13_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GPDMA1_Channel14_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void GPDMA1_Channel15_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void I2C1_EV_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void I2C1_ER_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void I2C2_EV_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void I2C2_ER_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void I2C3_EV_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void I2C3_ER_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void I2C4_EV_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void I2C4_ER_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void I3C1_EV_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void I3C1_ER_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void I3C2_EV_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void I3C2_ER_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM1_BRK_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM1_UP_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM1_TRG_COM_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM1_CC_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM2_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM3_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM4_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM5_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM6_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM7_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM8_BRK_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM8_UP_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM8_TRG_COM_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM8_CC_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM9_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM10_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM11_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM12_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM13_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM14_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM15_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM16_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM17_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void TIM18_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void LPTIM1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void LPTIM2_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void LPTIM3_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void LPTIM4_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void LPTIM5_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void ADF1_FLT0_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void MDF1_FLT0_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void MDF1_FLT1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void MDF1_FLT2_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void MDF1_FLT3_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void MDF1_FLT4_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void MDF1_FLT5_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void SAI1_A_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void SAI1_B_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void SAI2_A_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void SAI2_B_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void SPDIFRX1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void SPI1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void SPI2_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void SPI3_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void SPI4_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void SPI5_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void SPI6_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void USART1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void USART2_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void USART3_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void UART4_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void UART5_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void USART6_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void UART7_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void UART8_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void UART9_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void USART10_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void LPUART1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void XSPI1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void XSPI2_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void XSPI3_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void FMC_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void SDMMC1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void SDMMC2_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void UCPD1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void USB1_OTG_HS_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void USB2_OTG_HS_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void ETH1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void FDCAN1_IT0_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void FDCAN1_IT1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void FDCAN2_IT0_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void FDCAN2_IT1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void FDCAN3_IT0_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void FDCAN3_IT1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void FDCAN_CU_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void MDIOS_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void DCMI_PSSI_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void WAKEUP_PIN_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void CTI_INT0_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void CTI_INT1_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void LTDC_UP_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ void LTDC_UP_ERR_IRQHandler(void)
+ {
+-  while (1) {};
++  g4_trap();
+ }
+ 

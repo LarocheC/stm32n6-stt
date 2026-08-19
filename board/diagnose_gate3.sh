@@ -8,7 +8,12 @@
 #
 # Then: both switches LEFT, power cycle, re-attach usbipd, read the UART.
 set -u
-V=/home/claroche/stm32n6-tts/vendor/STM32N6-GettingStarted-Audio
+# Repo root from this script's own location, the same way
+# firmware/apply_vendor_mods.sh does it. Do not hardcode it -- the path
+# that used to be here named a sibling directory that does not exist
+# (this repository is stm32n6-stt).
+R="$(cd "$(dirname "$0")/.." && pwd)"
+V=$R/vendor/STM32N6-GettingStarted-Audio
 CP=/home/claroche/STMicroelectronics/STM32Cube/STM32CubeProgrammer
 CLI=$CP/bin/STM32_Programmer_CLI
 EL=$CP/bin/ExternalLoader/MX66UW1G45G_STM32N6570-DK.stldr

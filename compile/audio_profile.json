@@ -1,5 +1,5 @@
 { "Globals": {}, "Profiles": {
   "audio": {
-    "memory_pool": "/tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/adv/audio_strict.mpool",
+    "memory_pool": "/home/claroche/stm32n6-stt/compile/audio_strict.mpool",
     "options": "--optimization 3 --all-buffers-info --cache-maintenance --Oauto-sched --native-float --enable-virtual-mem-pools --Omax-ca-pipe 4 --Ocache-opt --Os --mapping-recap --mapping-recap-file mapping_recap.txt --sched-stats sched_stats.json --csv-file mem_traffic.csv --num-ops-info"
   } } }
