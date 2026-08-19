@@ -1956,3 +1956,51 @@ reproducers with fan-out 1, 2 and 4 are in `artifacts/onnx/repro2/`.
 ONNX that compiles to three epochs and reproduces `CONVACC 0/1/2 port 0 <- ACTIV 0
 port 0`, beside a 6-node control that produces `CONVACC 0/1/2 port 0 <- STRENG 7
 port 0` and differs in nothing else. That is the bug report.
+
+## On the board: 124.0 ms, and identical output to the workaround
+
+```
+# invoke returned
+# invoke 74421588 cycles = 124.035 ms at 600000000 Hz
+# mismatches 5 / 100
+```
+
+[`board/traces/round19_relu4d_pass.log`](traces/round19_relu4d_pass.log). Seven
+runs, cycle spread **0.0041 %**, measured **2.1 % under** the compiler's estimate
+— the same agreement the 1064-epoch build showed, so the scheduler model predicts
+this graph twice over.
+
+| build | epochs | measured | vs estimate |
+|---|---:|---:|---:|
+| `--force-all-in-out-to-mem` | 1064 | 194.0 ms | −2.4 % |
+| **rewrite, 84 sites** | **448** | **124.0 ms** | −2.1 % |
+
+**36 % faster, and the token output is bit-identical between the two.** Nine runs
+of the 1064-epoch build and seven of the 448-epoch build give one distinct
+100-token vector between them. Two schedules that share almost nothing —
+everything through memory versus chained through the stream switch, 616 epochs
+apart — compute the same answer.
+
+That is worth more than the speed. It means the device's arithmetic is
+deterministic and schedule-independent, so the five frames that disagree with
+onnxruntime are a property of the NPU's int8 evaluation, **not** an artifact of
+either workaround. Whatever the residual disagreement is, it is stable, and it is
+not going to move when the schedule changes again.
+
+## Gate 4 scoreboard
+
+| | status |
+|---|---|
+| the part executes the graph | **yes** — 448 epochs, 0 SW, 0 hybrid, all on-chip, no PSRAM |
+| latency | **124.0 ms** measured, 2.1 % under estimate, 0.004 % run-to-run |
+| blocker 1, stride-2 depthwise | **fixed** — bit-exact, free |
+| blocker 2, `ACTIV → CONVACC` | **fixed** — bit-exact, and *faster* than the graph that stalled |
+| determinism | 16 runs across two schedules, one distinct output |
+| per-frame agreement with host ORT | 5 / 100, **open** — see below |
+
+The execution question Gate 4 exists to answer is closed. What is not closed is
+whether 5/100 frames matters, and one utterance cannot answer it: the device's
+2 substitutions and 2 deletions on 17 words give a Wilson interval of
+**[9.6 %, 47.3 %]** against a host 5.88 %. That interval contains both "as good"
+and "much worse". The next measurement is device-versus-host over a few dozen
+utterances, which needs a harness that holds more than one canned tensor.
