@@ -890,6 +890,25 @@ neither libc nor the HAL.
 
 Last, deliberately: it cannot fail in a way that invalidates the model. **1-1.5 d.**
 
+> **CLOSED, 2026-08-19, first flash.** `board/traces/round28_gate7_lcd.log`,
+> `firmware/FRONTEND.md` §16. Pixel clock measured at **24,571,428 Hz**.
+>
+> **Item 7.4 (the PSRAM region) was not needed and should not be done.**
+> AXISRAM3/4/5 are contiguous — `0x34200000` + 3 × `0x70000` = `0x34350000`, where
+> npuRAM6 begins — and the mpool claims none of them, so the 768,000 B framebuffer
+> fits on-chip with the two audio buffers above it and 92,160 B spare. No linker
+> script change, no `-DUSE_EXT_SRAM`, and item 7.5's RISAF question never arises.
+> The LTDC master reaching AXISRAM is not an assumption: ST's own OD app puts its
+> layer 0 at `0x34200000`.
+>
+> **Two things the plan missed.** `LCD_LAYER_0_ADDRESS` had to be repointed
+> (§7.3 item 4 spotted this — it is correct and load-bearing). And **PLL4 is
+> shared**: `MX_MDF1_ClockConfig()` programs it for the microphone,
+> `MX_LTDC_ClockConfig()` takes IC16 = PLL4/2 from whatever it finds, and
+> 49.142/2 = 24.57 MHz happens to be within 2 % of the panel's 25 MHz. So
+> `Record_Init()` must run **before** `BSP_LCD_Init()`. Nothing in this section
+> anticipated that.
+
 `STM32N6-GettingStarted-Audio` is strictly headless — there is no `stm32n6570_discovery_lcd.c`
 in its BSP, no `Utilities/` directory at all, and no font tables. Everything comes from the
 ObjectDetection package.

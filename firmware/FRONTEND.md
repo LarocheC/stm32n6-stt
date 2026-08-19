@@ -1066,3 +1066,42 @@ operate on graph structure, not weights, so a fine-tuned or differently-trained
 Citrinet re-runs the identical pipeline. Gate 5 therefore closes with the chain
 verified end to end and the residual attributed to the training data of the model
 the project started from.
+
+
+---
+
+## 16. Gate 7 — the transcript is on the panel — 2026-08-19
+
+`board/traces/round28_gate7_lcd.log`. First flash, first boot.
+
+```
+# gate7: LCD up, 800x480 RGB565 at 0x34200000, pixel clock 24571428 Hz
+# L 0 peak 18452 (-5.0 dBFS) rms 2415 (-22.7 dBFS) clipped 0 gain 2
+# T 0 raw  "andwa one two three four five six seven eight nineen"
+# T 0 norm "andwa one two three four five six seven eight nineteen"
+```
+
+and the same thing on the screen: a blue header reading
+`STM32N6570-DK  Citrinet-256 CTC  8 s window`, the state `RESULT`, the transcript
+word-wrapped in Font20, and `fe 133ms npu 140ms  -5.0dBFS  guard 0%  gain 2`
+along the bottom. Every digit of a spoken count came back correct, with a
+spurious leading token and a doubled ending.
+
+**The pixel clock is 24,571,428 Hz**, which is 49.142 MHz / 2 to the digit — the
+PLL4-sharing arithmetic held. That number is the reason `Record_Init()` has to run
+before `BSP_LCD_Init()`: `MX_MDF1_ClockConfig()` sets PLL4 for the microphone and
+`MX_LTDC_ClockConfig()` takes IC16 = PLL4/2 from whatever it finds. Printing it
+rather than assuming it is what turned a coincidence into a checked fact.
+
+**What Gate 7 did not need:** PSRAM, a linker script change, `-DUSE_EXT_SRAM`, or
+the RISAF question of `firmware/WORKLIST.md` §7.4. AXISRAM3/4/5 are contiguous and
+unclaimed, so the 768,000 B framebuffer sits at `0x34200000` with the two audio
+buffers above it and 92,160 B spare below npuRAM6.
+
+**What it did need**, and neither was in the plan: repointing
+`LCD_LAYER_0_ADDRESS`, because `BSP_LCD_InitEx()` programs layer 0 before the
+application can call `ConfigLayer()` and the stock value would have had the LTDC
+DMA-scanning the application's own `.text` as pixels; and the init ordering above.
+
+Gates 0-7 are closed. 7b, the button, is the remaining item and the stock app has
+already done its plumbing.
