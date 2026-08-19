@@ -6,7 +6,7 @@ Neural-ART NPU** → greedy CTC decode → text on the 800×480 LCD.
 
 ## Status
 
-**Feasibility settled, GO. Gates 0–4 and 6 are closed; Gate 5 is not.** The model
+**Feasibility settled, GO. Gates 0–6 are closed.** The model
 has been exported, shape-frozen, quantised to int8 on real speech, compiled
 against the STM32N6 audio application's real memory geometry, and scored for
 accuracy at the window it will actually ship at. **The full 800-frame
@@ -14,9 +14,12 @@ Citrinet-256 encoder now executes on the Neural-ART NPU**, booted from external
 flash, in **124.0 ms** — 448 epoch blocks, 0 software epochs, 0 hybrid, every
 activation on-chip. Getting there cost two NPU defects, both in depthwise
 convolutions, both found on silicon and both fixed; see *On silicon* below.
-What is **not** done is the on-device front end: `firmware/src/citrinet_fe.c`
-reproduces `model/fe.py` exactly on the host but has never run on the M55. That
-is Gate 5, and it is the last real work.
+The on-device front end now runs too. `firmware/src/citrinet_fe.c` costs
+**136.0 ms on the M55** — as much as the whole NPU encoder — and agrees with the
+host to **six int8 values out of 960,000, each by exactly one LSB**. And on
+2026-08-19 the board transcribed live speech from its own microphone:
+*"the birch canoe slid on the smooth planks"*, read back verbatim.
+See [`firmware/FRONTEND.md`](firmware/FRONTEND.md) §§9-11.
 
 > That 124.0 ms is the invoke with the input tensor already in RAM. The
 > 64-utterance corpus run, which reads each tensor from memory-mapped external
@@ -193,7 +196,7 @@ These are **not** board measurements.
 - babble noise is the one that hurts: 60.1 % WER at 5 dB SNR — `eval/results/snr.json`
 
 **The gain-staging landmine.** At −54 dBFS input — which is where ordinary
-desk speech lands on the DK's IMP34DT05 microphone — 97.9 % of mel bins fall
+desk speech lands on the DK's MP23DB01HP microphone — 97.9 % of mel bins fall
 below NeMo's `log_zero_guard` and WER goes **5.83 % → 35.28 %** while every log
 reports a clean NPU run. Peak-normalising the captured buffer to 0.9 restores
 5.83 %. Applying that gain *after* int16 truncation only recovers to 10.45 %,
@@ -231,15 +234,40 @@ the on-device front end.
 
 ## Next
 
-Gates 0–4 and 6 are closed. The next step is **Gate 5** — the log-mel front end
-on the M55 — and it has three concrete obstacles, none of them speculative:
+Gates 0–6 are closed, Gate 5 as of 2026-08-19. **Gate 7 (the LCD graft) and 7b
+(the button) are what remain, and neither can fail in a way that invalidates the
+model.**
 
-1. **It has never run on the M55.** `firmware/src/citrinet_fe.c` reproduces
-   `model/fe.py` exactly on the host — **0 of 768,000 int8 values differ** over 12
-   utterances in the shipping CMSIS configuration, re-run 2026-08-19 with
-   `bash firmware/test/run_fe_parity.sh 12` — but its cost on silicon is
-   unmeasured. No on-device audio front end has ever been measured on this
-   machine. See [`firmware/FRONTEND.md`](firmware/FRONTEND.md) §5.
+### What Gate 5 actually cost, against what this section predicted
+
+The three obstacles below were the plan of record. All three are resolved, and
+the third was **not real**:
+
+1. ~~**It has never run on the M55.**~~ **136.0 ms**, measured — 81.5-81.7 M
+   cycles at 600 MHz, against 140.1 ms for the NPU. The front end is half the
+   latency budget, not a rounding error on it. Parity on silicon is six int8
+   values of 960,000, each one LSB (`firmware/FRONTEND.md` §11).
+2. ~~**The stock capture path does not fit in RAM.**~~ Sidestepped rather than
+   solved: the utterance design needs no ring buffer at all, and the two 256,000 B
+   buffers live in **AXISRAM3 and AXISRAM4** (`0x34200000`, `0x34270000`), which
+   the linker script never declares and the mpool never claims. The application's
+   own 1023 K region is untouched and links at 82 %.
+3. ~~**Gain staging is unsolved, and it fails silently.**~~ **The premise was
+   wrong by about 50 dB.** The −54 dBFS figure below is not what this board's
+   microphone delivers. At the stock `MDF_GAIN(16000) = 2` it produced a
+   **−3.8 dBFS peak with zero clipped samples** and 0 % guard occupancy. There
+   was no deficit to correct, and the 35.28 % WER prediction never applied. What
+   the AGC is actually for is staying out of the *quiet* extreme, where
+   `citrinet_fe_run()` correctly refuses (`rc -4`) — measured at 66-90 % guard.
+
+**Live WER is 20.8-25.0 %** over six utterances of one sentence, one speaker, one
+room — against **4.3 %** for the same image on canned waveforms in the same boot.
+That gap is far-field acoustics plus a 2.5 s sentence in an 8 s window, not the
+port. See [`firmware/FRONTEND.md`](firmware/FRONTEND.md) §§10-11 for the numbers
+and for two hypotheses of mine the board refuted.
+
+### The original text, kept because the reasoning is still worth reading
+
 2. **The stock capture path does not fit in RAM, by 2.6x.** At `COL = 800` the
    vendor app's buffers come to about **2,679,312 B** against a **1,047,552 B**
    region, and `AudioBM_proc_t` alone exceeds it by 2.07x — so it fails at
@@ -257,6 +285,16 @@ on the M55 — and it has three concrete obstacles, none of them speculative:
    reports a clean NPU run (`eval/results/gain.log`). The gain has to be applied
    in the MDF/PDM decimator: applying it after the int16 truncation only recovers
    to 10.45 %.
+
+   > **The simulation is sound; the −54 dBFS input to it is not.** Measured on
+   > silicon 2026-08-19: the DK's MP23DB01HP through MDF1 at the stock gain of 2
+   > gives a **−3.8 dBFS peak, −23.5 dBFS RMS, 0 clipped samples** and 0 % guard
+   > occupancy. Roughly 50 dB hotter than assumed. The *conditional* — if you feed
+   > it −54 dBFS, WER goes to 35 % — is still true, and is still the reason the
+   > guard telemetry exists; it was simply never the operating point. What is
+   > confirmed is the second half: `citrinet_fe_peak_normalize()` rescued a
+   > −25.7 dBFS capture from 66 % guard to 3 % and halved its errors, but never
+   > beat a correctly-gained one (`firmware/FRONTEND.md` §10).
 
 > **Corrected.** 1,026,240 B is `firmware/WORKLIST.md` §5.4's figure and it is a
 > **2.6x undercount**, because it counts `proc_buff` + `audio_out` + the ring buffer

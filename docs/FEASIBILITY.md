@@ -126,7 +126,7 @@ gate should be the log-floor occupancy statistic, not a bit-exactness comparison
 
 ### (d) The plan has no gain stage, and that is the silent-failure landmine
 
-The DK's IMP34DT05 is −26 dBFS at 94 dBSPL; conversational speech at 30–50 cm
+The DK's MP23DB01HP is −24 dBFS at 94 dBSPL; conversational speech at 30–50 cm
 lands at −54 to −48 dBFS. At −54 dBFS, **97.9 %** of mel-filter outputs fall
 below the log guard, the log saturates, per-feature normalisation amplifies the
 residue, and:
@@ -143,6 +143,26 @@ Source: `eval/results/gain.log`. Every one of these runs reports a clean NPU
 execution. **Critical detail:** the gain must be applied in the MDF/PDM decimator
 or the capture must be wider than int16 — gaining up *after* int16 truncation at
 that level only recovers to 10.45 %.
+
+> **Measured on silicon, 2026-08-19 — the landmine was not where this section put
+> it.** The simulation above is sound and the last row of the table is now
+> confirmed on the part. The **input** to it is not: this board's MP23DB01HP
+> through MDF1 at the stock `MDF_GAIN(16000) = 2` delivers a **−3.8 dBFS peak,
+> −23.5 dBFS RMS, 0 clipped samples**, and 73 of 64,000 mel bins below the guard
+> — 0.1 %, not 97.9 %. That is about **50 dB hotter** than the −54 to −48 dBFS
+> assumed here, and it is the *loud* end of the usable range, not the quiet one.
+> The paragraph's conclusion survives its premise: gain still belongs in the MDF,
+> and `citrinet_fe_peak_normalize()` measured on the board behaves exactly as the
+> last table row predicts — it rescued a −25.7 dBFS capture from 66 % guard
+> occupancy to 3 % and halved its word errors, but never beat a capture that was
+> gained correctly in the first place. The deployed AGC therefore moves the gain
+> **down** (to −5 in the test room) and targets guard occupancy rather than a
+> level. `firmware/FRONTEND.md` §§10-11; traces
+> `board/traces/round22_mic_firstlight.log`, `round23_mic_guardagc.log`.
+>
+> Sensitivity figure also corrected: MP23DB01HP is −24 dBFS at 94 dB SPL, not
+> −26; the part named here was previously an IMP34DT05, which this board does not
+> carry (`firmware/AUDIO-INPUT.md` §7).
 
 ### (e) Touch is not available; the LCD is a separate graft
 

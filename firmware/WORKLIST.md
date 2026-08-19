@@ -47,6 +47,9 @@ numbers above are now history.
 | the model drop-in procedure | "write `firmware/scripts/gen_model.sh`" (item 4.1) | **`compile/gen_model.sh`**, which compiles *into* `artifacts/compile/<tag>/` and preserves the whole compiler workspace. `compile/score_build.py` scores a build |
 | epoch numbers in `board/GATE4.md` rounds 9-17 | as printed | **two too low.** The board's trace prints a 0-based software counter; atonn's `epoch_num` starts at 2 (`board/GATE4.md` Round 18) |
 | Gate 6 | "0.5 d, 6.1/6.2 done" | **closed**: 0 text disagreements over 9,226 characters |
+| Gate 5 | "the largest and riskiest gate", 3 obstacles | **closed 2026-08-19.** Front end 136.0 ms on the M55; parity 6 int8 values of 960,000 at ±1 LSB; live mic transcribing at 20.8–25.0 % WER. Two of the three obstacles were not real |
+| the DK microphone level | −54 dBFS (`FEASIBILITY` §2(d)) | **−3.8 dBFS peak at the stock `MDF_GAIN` = 2**, 0 clipped, 0.1 % guard occupancy — about 50 dB out |
+| the microphone part | IMP34DT05 | **MP23DB01HP** (`stm32n6570_discovery_audio.h:194`); the IMP34DT05 string is unused AED metadata whose default is an IMU |
 
 Sources: `board/GATE4.md` Rounds 18-20, `board/traces/round19_relu4d_pass.log`,
 `board/traces/round20_corpus64.score.txt`,
@@ -149,7 +152,8 @@ that is the first difference to eliminate.
 
 ### The capture path
 
-- **Microphone**: on-board MEMS PDM mic **IMP34DT05** (`ai_model_config.h:38`), read through
+- **Microphone**: on-board MEMS PDM mic **MP23DB01HP**
+  (`Drivers/BSP/STM32N6570-DK/stm32n6570_discovery_audio.h:194`), read through
   **MDF1** (`AUDIO_IN_DEVICE_DIGITAL_MIC`, BSP instance **1**). `AUDIO_IN_Init` is at
   `audio_bm.c:771-818` (`Record_Init`).
 - **Rate**: `AUDIO_FREQUENCY_16K` (`stm32n6570_discovery_conf.h:55`), 16-bit, 1 channel.
@@ -443,6 +447,27 @@ Both alignments 32. Read the scale from `info.inputs[0].scale.data[0]` at runtim
 This is the largest and riskiest gate. 2-3 days, and the ordering below is deliberate:
 the level self-test goes in with the *first* commit, not at the end.
 
+> **CLOSED, 2026-08-19.** Traces `board/traces/round21_wav_replay.log`,
+> `round22_mic_firstlight.log`, `round23_mic_guardagc.log`; write-up
+> `firmware/FRONTEND.md` §§9-11.
+>
+> | | |
+> |---|---|
+> | front end cost on the M55 | **136.0 ms**, against 140.1 ms for the whole NPU encoder |
+> | feature parity on silicon | **6 int8 values of 960,000, each ±1 LSB** |
+> | live capture | on-board MP23DB01HP → MDF1 → AXISRAM3, 128,000 samples every time, **no ring buffer, no `malloc`** |
+> | live WER | **20.8–25.0 %** over six utterances of one sentence; **4.3 %** for the same image on canned waveforms in the same boot |
+> | RAM | 864,064 B of 1023 K (82.5 %), both 256,000 B buffers in AXISRAM3/4 which nothing else claims |
+>
+> **Three of this section's predictions were wrong, and the board said so.**
+> The −54 dBFS microphone level is wrong by about 50 dB (§5.8 below, and
+> `docs/FEASIBILITY.md` §2(d)); the memory problem of §5.4 does not need solving
+> because the utterance design needs no ring buffer; and the `< 20 %` guard
+> criterion rejects the reference corpus's own distribution. Two of *my* later
+> hypotheses were also refuted — an AGC targeting −20 dBFS peak, and then the
+> claim that ~36 % guard occupancy is optimal. Items 5.1–5.10 below are otherwise
+> accurate and are kept as written.
+>
 > **Still the plan of record — this section has not been superseded.** Four of its
 > items are built and host-verified (5.3, 5.5, 5.6, 5.9 → `firmware/src/citrinet_fe.c`,
 > `firmware/inc/citrinet_fe_tables.h`, `firmware/tools/gen_mel_tables.py`), and
@@ -675,8 +700,12 @@ in this region.
 `docs/FEASIBILITY.md` §2(d) shows only recovers to 10.45 % if you gain up afterwards:
 
 1. `MDF_GAIN(AUDIO_FREQUENCY_16K)` = 2 today (`Patch/...audio.c:164`); range −16..+24 in
-   ~3 dB steps. Going from −54 dBFS to ≈ −20 dBFS is +34 dB ≈ **+11 steps → Gain 13**,
-   with headroom to 24. `HAL_MDF_SetGain()` works during acquisition, so a slow AGC
+   ~3 dB steps. ~~Going from −54 dBFS to ≈ −20 dBFS is +34 dB ≈ **+11 steps → Gain 13**,
+   with headroom to 24.~~ **Measured 2026-08-19: the stock gain of 2 already gives a
+   −3.8 dBFS peak with 0 clipped samples.** The −54 dBFS premise is wrong by about
+   50 dB and this arithmetic points the wrong way — the deployed AGC moves the gain
+   *down*, to −5, and targets guard occupancy rather than a level
+   (`firmware/FRONTEND.md` §§10-11). `HAL_MDF_SetGain()` works during acquisition, so a slow AGC
    driven by the previous utterance's peak is available for free.
 2. The `/256` in the two MDF callbacks. `Audio_DigMicRecBuff` is `int32_t` holding MDF's
    24-bit output; `/256` discards 8 bits. At −54 dBFS the signal occupies the bottom ~9 of
@@ -686,8 +715,31 @@ in this region.
 Prefer knob 1 (analogue-domain, no clipping risk from a fixed shift), instrument both.
 
 **Pass:** features match `model/fe_reference.py` to within a few LSB of the int8 grid,
-**and** guard occupancy < 20 % on live speech.
-**Stop if** occupancy stays high after gain — the gain is in the wrong place in the chain.
+~~**and** guard occupancy < 20 % on live speech.~~
+~~**Stop if** occupancy stays high after gain — the gain is in the wrong place in the chain.~~
+
+> **First half: PASSED, and measured.** Six int8 values of 960,000 differ across
+> the fifteen non-truncated replay utterances, each by exactly one LSB
+> (`firmware/FRONTEND.md` §11).
+>
+> **Second half: the criterion was wrong and is withdrawn.** "< 20 % on live
+> speech" was derived from the −54 dBFS assumption — the fear being that a
+> too-quiet capture drives occupancy *up*. On silicon the stock gain gives
+> **0.1 %**, so the criterion passes trivially and measures nothing. Worse, the
+> evaluation corpus this model is scored on sits at a **median 35.6 %**
+> occupancy, so "< 20 %" would reject the reference distribution itself.
+>
+> Replaced by: **`citrinet_fe_run()` must return `CITRINET_FE_OK` on live speech**
+> — i.e. occupancy under `CITRINET_FE_GUARD_MAX_FRAC`, which is the threshold the
+> refusal is actually defined by. Measured: `OK` on every utterance once the AGC
+> settled, `E_GUARD` at 66–90 % when it was driven deliberately quiet. The
+> "stop if" is retained in spirit: sustained `E_GUARD` after the AGC has
+> converged means the gain is in the wrong place.
+>
+> A word on what the middle of that range is worth. Eleven utterances in
+> `round22` put the fewest errors at 26–50 % occupancy, matching the corpus
+> median; six utterances in `round23` did not reproduce it. Treat 36 % as a
+> defensible default for the AGC setpoint, not as a calibrated optimum.
 
 **Unverified:** M55 log-mel cost. 800 frames × (512-pt real FFT + 500 MAC + 80 `logf` +
 80 quantise), plus a second pass of 64,000 multiply-adds. Nobody on this machine has

@@ -226,25 +226,37 @@ and RAM footprints, warning-clean cross-compilation. Everything below is
    loudly, so this is safe, not silent. `arm_cfft_sR_f32_len256` is not an escape:
    `arm_const_structs.c:95` hides every `arm_cfft_sR_f32_*` behind
    `#if !defined(ARM_MATH_MVEF)`.
-3. **Cycle cost — UNMEASURED.** No audio front end has been timed on this part.
-   `citrinet_fe_finish()` does two float divisions per output value (128,000
-   VDIVs); reciprocals are the fix if it dominates, at the cost of the last-ulp
-   agreement. The decoder is 102,500 int8 comparisons plus ≤1,200 byte copies —
-   expected negligible against the 91.9 ms inference, but that is an expectation.
-   Neither was DWT-timed.
-4. **libm.** `logf`/`sqrt`/`rintf` come from glibc on host, newlib-nano on target.
-   Both sub-ulp; the log runs 64,000 times per utterance. Worth one on-device diff.
-5. **The capture path — NOT TOUCHED.** Everything here starts from an int16
-   buffer. MDF decimator, the `/256` truncation at
-   `Patch/stm32n6570_discovery_audio.c:3172,3197`, `MDF_GAIN`, and the
-   ring-buffer restructuring of `WORKLIST §5.7`/`§5.8` are all still to do. The
-   stock geometry costs 1,026,240 B of `proc_buff` + `audio_out` + ring against a
-   1,047,552 B region and still will not link; **none of plans A/B/C can coexist
-   with it.**
-6. **Guard occupancy on the DK's own microphone.** 4.5 % median on LibriSpeech at
-   native level, 96 % at −54 dBFS. What IMP34DT05 + MDF actually delivers is
-   exactly the number the threshold exists to expose — the stop-if condition of
-   `WORKLIST §5`.
+3. ~~**Cycle cost — UNMEASURED.**~~ **MEASURED, 2026-08-19: 136.0 ms**
+   (81.5–81.7 M cycles at 600 MHz), against 140.1 ms for the whole NPU encoder.
+   The front end is half the latency budget. The expectation that the decoder is
+   negligible held. One instrument trap cost a run and is worth knowing:
+   `AiDPUProcess()` **resets the cycle counter internally**, so a stamp taken
+   before it without its own reset reports the runtime's measurement, not yours —
+   the tell was two fixed-cost stages summing to a constant while their split
+   tracked the guard count. `firmware/FRONTEND.md` §9.
+4. ~~**libm.**~~ **Diffed on device.** Over 15 non-truncated utterances,
+   960,000 int8 values, host and target disagree on **six — each by exactly one
+   LSB**, localised to single mel bins by per-row sums. Any libm or FFT
+   difference large enough to matter would have moved all 80 rows of a tensor,
+   since every mel bin is a dot product over shared FFT bins. `logf`, `rintf`,
+   `arm_rfft_fast_f32` on Helium and FMA contraction are all ruled out as
+   *material* differences. `firmware/FRONTEND.md` §11.
+5. ~~**The capture path — NOT TOUCHED.**~~ **Built and run.** `gate5_mic()`
+   keeps `BSP_AUDIO_IN_Record` and the two BSP transfer callbacks and **drops the
+   ring buffer entirely** — the utterance design never needed it, which is what
+   makes the 1,026,240 B (really 2,679,312 B) problem disappear rather than get
+   solved. The callbacks append 160 samples at a time straight into AXISRAM3.
+   Note the live `/256` is at `:3234,3259`, not `:3172,3197` — the lines named
+   here are inside `#if (USE_HAL_MDF_REGISTER_CALLBACKS == 1)`, which
+   `stm32n6xx_hal_conf.h:191` sets to 0 (`firmware/AUDIO-INPUT.md` §7).
+6. ~~**Guard occupancy on the DK's own microphone.**~~ **0.1 % at the stock
+   gain** — 73 of 64,000 bins, at a −3.8 dBFS peak. Not 96 %, and not 4.5 %
+   either: a live capture's noise floor rarely dips below 2⁻²⁴ at all, where
+   LibriSpeech's near-silent pauses do. That difference is why the deployed AGC
+   targets guard occupancy: it is the one number that measures how far the input
+   distribution has drifted from the one per-feature normalisation was calibrated
+   on. The threshold did exactly what it exists for — `citrinet_fe_run()` returned
+   `CITRINET_FE_E_GUARD` at 66–90 % and `OK` below.
 7. **The U+2581 → space branch in the decoder is dead code on the shipped
    header** (no piece contains a 0xE2 byte), so it is reasoned about, not measured.
 

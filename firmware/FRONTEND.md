@@ -242,7 +242,7 @@ utterance length: 30 of 60 arbitrary dev-clean utterances were refused, and a
 and denominator.
 
 −54 dBFS is where `eval/results/gain.log` says ordinary desk speech lands on this
-board's IMP34DT05, and where WER goes 5.83 % → 35.28 % while every log reports a
+board's MP23DB01HP, and where WER goes 5.83 % → 35.28 % while every log reports a
 clean NPU run. The front end now refuses that capture instead of transcribing
 noise.
 
@@ -634,3 +634,92 @@ The next build prints each row's signed sum and sum of absolute values alongside
 its hash. Sum differing by ±1 *and* sumabs by ±1 means exactly one value moved by
 one LSB — which turns the paragraph above from an argument into a measurement.
 Signed sum alone would not do it: two values moving +1 and −1 leave it unchanged.
+
+
+---
+
+## 11. The AGC converges, and the residual is six LSBs — 2026-08-19
+
+`board/traces/round23_mic_guardagc.log`. Same image structure as §10, with the
+AGC retargeted onto guard occupancy, a speech gate, and per-mel-row sums added
+to the replay pass.
+
+### Feature parity: closed
+
+The replay pass printed, per utterance, 80 row hashes **and** 80 pairs of
+(signed sum, sum of absolute values). Against the host tensors in
+`artifacts/corpus/corpus_blob.bin`:
+
+| utterance | rows differing by hash | by sum | max abs delta-sum | max abs delta-sumabs |
+|---|---:|---:|---:|---:|
+| eleven utterances | 0 | 0 | 0 | 0 |
+| u0 `1272-128104-0000` | — | 1 | 1 | 1 |
+| u9 `7850-281318-0006` | 2 | 2 | 1 | 1 |
+| u13 `84-121123-0006` | 1 | 1 | 1 | 1 |
+| u15 `6345-93302-0017` | 2 | 2 | 1 | 1 |
+| u11 `1272-141231-0012` (truncated) | 56 | 43 | 2 | 3 |
+
+**Six int8 values of 960,000 differ across the fifteen non-truncated utterances,
+each by exactly one LSB — 0.00063 %.**
+
+Every differing row moves its signed sum by ±1 *and* its sum of absolute values
+by ±1. That pair is the signature of one value crossing a rounding boundary and
+nothing else: two values moving +1 and −1 would leave the signed sum unchanged,
+and any structural fault — a different FFT, a different pre-emphasis, a different
+input buffer, a different mel table — would move whole rows by far more than one
+count. The signs even give the direction: u9 bin 2 reads −1/+1, a negative value
+that became one step more negative; u15 bin 2 reads +1/−1, a negative value that
+became one step less so.
+
+§9 listed `arm_rfft_fast_f32` on Helium, FMA contraction and `logf` as untested
+candidates. They are no longer worth testing. **Gate 5's criterion — "features
+match `model/fe_reference.py` to within a few LSB of the int8 grid" — is met, and
+this is the measurement.**
+
+u11 is the truncated utterance, predicted in §9. That its 56 differing rows carry
+only 43 differing sums means 13 rows changed in compensating directions, which is
+what a small diffuse perturbation looks like after per-bin normalisation.
+
+### The controller
+
+`# G 0 guard 26% target 36% gain -4 -> -5`, and then `-5` for every utterance
+after it, at guard 37, 37, 38, 41, 35 %. Integer division by the 8-points-per-step
+sensitivity is the deadband, so it corrects once and stops. The speech gate was
+not exercised in this run — nobody left the room.
+
+### Live speech, six utterances
+
+Same sentence, same speaker, same room as §10.
+
+```
+raw   12 errors / 48 words = 25.0 % WER
+norm  10 errors / 48 words = 20.8 % WER
+u1 norm  "the birch canoe slid on the smooth planks"   0.0 %
+```
+
+### The guard-occupancy hypothesis did not survive its own second run
+
+§10 read eleven points as "errors are lowest at 26–50 % guard, matching the
+corpus median of 35.6 %". This run cannot confirm it and mildly cuts against it:
+the AGC held guard at target so there is no variation left to correlate, and the
+`norm` pass — which sits at **0–1 % guard** — scored slightly better than raw.
+Two errors in 48, a sign test on 2 improvements and 0 regressions, p ≈ 0.25.
+Neither confirmed nor refuted.
+
+What both runs do support is duller and safer: **inside a broad middle band the
+level barely matters; the extremes are what hurt.** The controller earns its keep
+by staying out of the 66–90 % region where `citrinet_fe_run()` returns
+`CITRINET_FE_E_GUARD`, not by hitting 36 % precisely. Retargeting it onto guard
+occupancy is still the right call — guard occupancy is the quantity the failure
+is defined in terms of — but the specific setpoint is a plausible default, not a
+calibrated one.
+
+### What the 25 % is, and is not
+
+It is not the deployment. The same image, the same `citrinet_fe.c`, the same 448
+epochs on the NPU scored **4.3 % WER on canned waveforms** in the replay pass
+minutes earlier (§9, `firmware/test/score_wav.py`). The gap is acoustic — one
+far-field MEMS microphone in a room, against LibriSpeech's close read speech —
+plus a windowing mismatch: a ~2.5 s sentence inside an 8 s window whose
+per-feature mean and standard deviation were calibrated on 4–7.5 s of continuous
+speech. Neither is a property of the port, and both are measurable separately.

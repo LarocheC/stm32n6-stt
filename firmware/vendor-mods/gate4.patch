@@ -73,7 +73,7 @@ index d4ebc45..8162f80 100644
  LD_FLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS)
  LD_FLAGS += -Wl,--cref -Wl,--gc-sections
 diff --git a/Projects/GS/Src/audio_bm.c b/Projects/GS/Src/audio_bm.c
-index 8e3d175..2a35cb9 100644
+index 8e3d175..617ae69 100644
 --- a/Projects/GS/Src/audio_bm.c
 +++ b/Projects/GS/Src/audio_bm.c
 @@ -34,6 +34,24 @@
@@ -340,7 +340,7 @@ index 8e3d175..2a35cb9 100644
  
    /* by default processing is active */
    AudioProcIsOn = true;
-@@ -138,9 +338,709 @@ void init_bm(void)
+@@ -138,9 +338,776 @@ void init_bm(void)
    * @param  None
    * @retval None
    */
@@ -678,6 +678,33 @@ index 8e3d175..2a35cb9 100644
 +  }
 +  my_printf("\r\n");
 +}
++
++/* The same 80 rows, as sums.  A hash says "this row differs" and stops there;
++ * the sums say BY HOW MUCH.  Round 21 left four utterances disagreeing with the
++ * host, and the row hashes localised each to one or two isolated, non-adjacent
++ * mel bins -- which rules out the FFT, the pre-emphasis and the input samples,
++ * since any of those would move all 80 rows, and rules out the mel table, which
++ * would move a contiguous run.  What is left is a single int8 value crossing a
++ * rounding boundary, and that is a claim about magnitude: sum differs by +-1 and
++ * sumabs by +-1 means exactly one value moved by one LSB.  Signed sum alone is
++ * not enough -- two values moving +1 and -1 leave it unchanged. */
++static void g5_print_row_sums(const int8_t *in, uint32_t utt, const char *tag)
++{
++  my_printf("# S %lu %s", (unsigned long)utt, tag);
++  for (uint32_t b = 0; b < (uint32_t)CITRINET_FE_NMEL; b++)
++  {
++    const int8_t *row = in + b * (uint32_t)CITRINET_FE_T;
++    int32_t sum = 0, sumabs = 0;
++    for (uint32_t t = 0; t < (uint32_t)CITRINET_FE_T; t++)
++    {
++      const int32_t v = (int32_t)row[t];
++      sum += v;
++      sumabs += (v < 0 ? -v : v);
++    }
++    my_printf(" %ld,%ld", (long)sum, (long)sumabs);
++  }
++  my_printf("\r\n");
++}
 +#endif /* GATE5_WAV || GATE5_MIC */
 +
 +#ifdef GATE5_WAV
@@ -742,7 +769,8 @@ index 8e3d175..2a35cb9 100644
 +       * AiDPUProcess() this buffer may hold logits. */
 +      uint32_t fhash = g5_fnv1a((const uint8_t *)in, in_bytes);
 +      /* also BEFORE the invoke, for the same aliasing reason */
-+      if (rowhash) g5_print_row_hashes(in, i, "wav");
++      if (rowhash) { g5_print_row_hashes(in, i, "wav");
++                     g5_print_row_sums(in, i, "wav"); }
 +
 +      mcu_cache_clean_invalidate_range((uint32_t)in, (uint32_t)in + in_bytes);
 +
@@ -809,10 +837,25 @@ index 8e3d175..2a35cb9 100644
 + *
 + *   1. MDF_GAIN, analogue-domain, applied BEFORE the truncation.  Range -16..24
 + *      in ~3 dB steps (stm32n6xx_hal_mdf.h:275-277).  Record_Init() leaves it at
-+ *      MDF_GAIN(16000) = 2.  A slow AGC drives it from the previous utterance's
-+ *      peak toward -20 dBFS.  HAL_MDF_SetGain() only works while the filter is
-+ *      in HAL_MDF_STATE_ACQUISITION (stm32n6xx_hal_mdf.c:1808), so it is called
++ *      MDF_GAIN(16000) = 2.  HAL_MDF_SetGain() only works while the filter is in
++ *      HAL_MDF_STATE_ACQUISITION (stm32n6xx_hal_mdf.c:1808), so it is called
 + *      after BSP_AUDIO_IN_Record(), not before.
++ *
++ *      THE AGC TARGETS GUARD OCCUPANCY, NOT LEVEL, and the first silicon run is
++ *      why.  This board's microphone is not quiet: at the stock gain of 2 it
++ *      delivered a -3.8 dBFS peak with 0 clipped samples, against the -54 dBFS
++ *      docs/FEASIBILITY.md section 2(d) assumed and built a 35 % WER prediction
++ *      on.  That assumption is wrong by about 50 dB and the gain-staging risk it
++ *      created never existed.  But the loudest captures were not the best ones:
++ *      over 11 spoken utterances of one sentence, mean errors ran 3.5 at 0-25 %
++ *      guard, 1.8 at 26-50 %, 2.5 at 51-70 %, and the eval corpus's own median
++ *      guard occupancy is 35.6 % (artifacts/corpus/wav_ref.json).  The mechanism
++ *      is distribution match, not headroom: LibriSpeech has near-silent pauses
++ *      that fall below the 2^-24 guard, a hot close-mic capture has a noise floor
++ *      that never does, and per-feature normalisation then works from different
++ *      statistics than training.  So drive guard occupancy to the corpus median
++ *      and let the level land where it lands.  n=1 per condition, one speaker,
++ *      one sentence -- a trend with a mechanism, not a calibrated number.
 + *   2. citrinet_fe_peak_normalize(), digital, applied AFTER it.  This is the
 + *      knob FEASIBILITY says is the weak one -- so run it as the CONTROL, not
 + *      as the fix, and print both transcripts.  If "raw" and "norm" agree, the
@@ -826,12 +869,18 @@ index 8e3d175..2a35cb9 100644
 + * citrinet_fe_run() returns CITRINET_FE_E_GUARD (-4) past 50 %.  The NPU runs
 + * anyway -- refusing would hide exactly the degradation we are here to see.
 + */
-+#define G5M_TARGET_DBFS_X10   (-200)   /* AGC target peak: -20.0 dBFS          */
-+#define G5M_STEP_DB_X10       30       /* one MDF gain step, ~3 dB             */
++#define G5M_TARGET_GUARD_PCT  36       /* wav_ref.json: corpus median 35.6 %   */
++#define G5M_GUARD_PER_STEP    8         /* percentage points per MDF gain step,
++                                         * measured: gain -8 -> 66-69 %, -6 ->
++                                         * 50-57 %, -4 -> 33-34 %, -3 -> 20 %.
++                                         * Integer division by this is also the
++                                         * deadband, so +-7 points does not move */
 +#define G5M_GAIN_MIN          (-16)
 +#define G5M_GAIN_MAX          24
-+#define G5M_MAX_STEP          6        /* per utterance, so a wild reading cannot
++#define G5M_MAX_STEP          3        /* per utterance, so a wild reading cannot
 +                                        * slam the gain to a rail in one go    */
++#define G5M_START_GAIN        (-4)     /* where this room landed; the loop moves
++                                        * it, this only shortens the approach   */
 +#define G5M_SETTLE_MS         400u     /* dropped: MDF high-pass + gain change  */
 +
 +static volatile uint32_t g5m_w;        /* samples written, 0..CITRINET_FE_NSAMPLES */
@@ -868,8 +917,11 @@ index 8e3d175..2a35cb9 100644
 +  my_printf("%s%d.%d", x10 < 0 ? "-" : "", a / 10, a % 10);
 +}
 +
++typedef struct { int rc; uint32_t guard_pct; uint32_t nchars; } g5m_res_t;
++
 +/* Front end + NPU + CTC over whatever is in `pcm`, reported under `tag`. */
-+static void g5m_infer(uint32_t utt, const char *tag, const int16_t *pcm, int rowhash)
++static g5m_res_t g5m_infer(uint32_t utt, const char *tag, const int16_t *pcm,
++                           int rowhash)
 +{
 +  int8_t *in  = (int8_t *) g4_aictx.p_stai_inputs[0];
 +  int8_t *out = (int8_t *) g4_aictx.p_stai_outputs[0];
@@ -886,7 +938,8 @@ index 8e3d175..2a35cb9 100644
 +
 +  /* before the invoke: input and output buffers may alias (GATE4.md Round 1) */
 +  const uint32_t fhash = g5_fnv1a((const uint8_t *)in, in_bytes);
-+  if (rowhash) g5_print_row_hashes(in, utt, tag);
++  if (rowhash) { g5_print_row_hashes(in, utt, tag);
++                 g5_print_row_sums(in, utt, tag); }
 +
 +  mcu_cache_clean_invalidate_range((uint32_t)in, (uint32_t)in + in_bytes);
 +
@@ -921,11 +974,17 @@ index 8e3d175..2a35cb9 100644
 +      citrinet_ctc_decode(out, n_frames, g5m_text, sizeof(g5m_text), &nw, NULL);
 +  my_printf("# T %lu %s ctc %d chars %lu \"%s\"\r\n",
 +            (unsigned long)utt, tag, (int)st, (unsigned long)nw, g5m_text);
++
++  g5m_res_t r;
++  r.rc        = rc;
++  r.guard_pct = (g5_fe.guard_below * 100u) / guard_tot;
++  r.nchars    = nw;
++  return r;
 +}
 +
 +static void gate5_mic(void)
 +{
-+  int gain = 2;      /* what MX_MDF1_Init() leaves in DFLTCICR: MDF_GAIN(16000) */
++  int gain = G5M_START_GAIN;
 +
 +  my_printf("\r\n# gate5 mic: on-board MP23DB01HP -> MDF1 filter0, 16 kHz mono int16\r\n");
 +  my_printf("# fe backend=%d tables_fnv1a=%08lx window %d samples (%d s)\r\n",
@@ -988,30 +1047,38 @@ index 8e3d175..2a35cb9 100644
 +    my_printf(" dBFS) clipped %lu gain %d\r\n", (unsigned long)clip, gain);
 +
 +    /* ---- knob 2 as the control, knob 1 as the fix ---------------------- */
-+    g5m_infer(utt, "raw", pcm, 1);
++    const g5m_res_t raw = g5m_infer(utt, "raw", pcm, 1);
 +
 +    const float dg = citrinet_fe_peak_normalize(pcm, (uint32_t)CITRINET_FE_NSAMPLES,
 +                                                0.5f, 64.0f);
 +    my_printf("# N %lu digital gain x%d/100\r\n",
 +              (unsigned long)utt, (int)lrintf(dg * 100.0f));
-+    g5m_infer(utt, "norm", pcm, 0);
++    (void)g5m_infer(utt, "norm", pcm, 0);
 +
 +    /* ---- AGC for the next utterance ------------------------------------ */
-+    if (peak > 0u)
++    /* Frozen when nothing was said.  Utterances 11-25 of the first silicon run
++     * were an empty room, and a guard-seeking loop with no speech gate winds the
++     * gain to a rail chasing a target that silence can never hit.  The decoder
++     * already tells us: no tokens, no adaptation. */
++    if (raw.nchars == 0u)
 +    {
-+      const int err = G5M_TARGET_DBFS_X10 - g5m_dbfs_x10(peak);
-+      int steps = (err + (err >= 0 ? G5M_STEP_DB_X10 / 2 : -G5M_STEP_DB_X10 / 2))
-+                  / G5M_STEP_DB_X10;
++      my_printf("# G %lu no speech decoded -- gain held at %d\r\n",
++                (unsigned long)utt, gain);
++    }
++    else if (peak > 0u)
++    {
++      /* guard above target => too quiet => raise gain.  Integer division is the
++       * deadband: anything inside +-G5M_GUARD_PER_STEP leaves the gain alone. */
++      int steps = ((int)raw.guard_pct - G5M_TARGET_GUARD_PCT) / G5M_GUARD_PER_STEP;
 +      if (steps >  G5M_MAX_STEP) steps =  G5M_MAX_STEP;
 +      if (steps < -G5M_MAX_STEP) steps = -G5M_MAX_STEP;
 +      int ng = gain + steps;
 +      if (ng < G5M_GAIN_MIN) ng = G5M_GAIN_MIN;
 +      if (ng > G5M_GAIN_MAX) ng = G5M_GAIN_MAX;
-+      if (ng != gain)
-+      {
-+        my_printf("# G %lu gain %d -> %d\r\n", (unsigned long)utt, gain, ng);
-+        gain = ng;
-+      }
++      my_printf("# G %lu guard %lu%% target %d%% gain %d -> %d\r\n",
++                (unsigned long)utt, (unsigned long)raw.guard_pct,
++                G5M_TARGET_GUARD_PCT, gain, ng);
++      gain = ng;
 +    }
 +
 +    HAL_Delay(2000);
@@ -1050,7 +1117,7 @@ index 8e3d175..2a35cb9 100644
    time_stats_init();
  
    initAudioProc(&audio_proc_ctx);
-@@ -172,6 +1072,7 @@ void exec_bm(void)
+@@ -172,6 +1139,7 @@ void exec_bm(void)
  
    test_dump();
    my_printf("\n\r# End Processing\n\r");
@@ -1058,7 +1125,7 @@ index 8e3d175..2a35cb9 100644
  }
  #endif
  /**
-@@ -554,7 +1455,14 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
+@@ -554,7 +1522,14 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
  {
    if (Instance == 1U)
    {
@@ -1073,7 +1140,7 @@ index 8e3d175..2a35cb9 100644
    }
  }
  
-@@ -567,7 +1475,11 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
+@@ -567,7 +1542,11 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
  {
    if (Instance == 1U)
    {
@@ -1085,7 +1152,7 @@ index 8e3d175..2a35cb9 100644
    }
  }
  #if (CTRL_X_CUBE_AI_AUDIO_OUT==COM_TYPE_HEADSET)
-@@ -842,7 +1754,18 @@ static void Ext_Mem_Config(void)
+@@ -842,7 +1821,18 @@ static void Ext_Mem_Config(void)
      __BKPT(0);
    }
    BSP_XSPI_NOR_EnableMemoryMappedMode(0);
