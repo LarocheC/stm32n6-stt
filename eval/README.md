@@ -41,10 +41,19 @@ window, and the calibration/evaluation disjointness audit.
 | `run_occ.py` / `run_occ12.py` | does padding a short utterance to a long window hurt | `results/occ.log`, `occ12.log` |
 | `run_pad.py` | padding placement sensitivity | `results/pad.log` |
 | `run_snr.py` | white / pink / babble noise at 30–5 dB | `results/snr.json` |
-| `run_room.py` | reverberation, mic HP, clipping, gain | `results/room.json` |
+| ~~`run_room.py`~~ | reverberation, mic HP, clipping, gain | `results/room.json` — the result is kept, the script is **deleted**: it read a private impulse-response WAV and a scratch directory belonging to a different project, so it could not run for anyone else. `firmware/test/reverb_sweep.py` is the reproducible successor and is the one that measured RT60 against WER. |
 | `run_gain.py` | input level vs the log-zero guard | `results/gain.log` |
 | `run_fe.py` | frontend ablation — which spec choices matter | `results/fe.log` |
 | `run_ab.py` | per-utterance A/B records | `results/ab.json` |
+
+> **These harnesses are provenance, not tools.** They read a helper module and a
+> data directory from the scratch tree they were written in, which no longer
+> exists, so they do not run as checked in — each now says so in its own header.
+> They are kept so the numbers in `results/` and `GATE1.md` have visible code
+> behind them. The reproducible successors, written later and runnable today, are
+> `firmware/test/fe_parity.py`, `level_sweep.py`, `noise_sweep.py`,
+> `reverb_sweep.py`, `score_corpus.py` and `score_wav.py` — the last two carry
+> `--self-test` modes that inject known faults and check each is reported.
 
 ## Reading the JSON
 

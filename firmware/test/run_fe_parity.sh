@@ -5,7 +5,7 @@
 #   bash firmware/test/run_fe_parity.sh [N_UTTERANCES]
 #
 # Needs the zoo venv for numpy/librosa/scipy/soundfile:
-#   source /home/claroche/stm32n6-deployment-zoo/.venv/bin/activate
+#   source ~/.venvs/stm32n6-stt/bin/activate     (see QUICKSTART.md)
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"

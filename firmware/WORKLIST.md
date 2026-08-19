@@ -3,14 +3,29 @@
 File-level plan for putting Citrinet-256 on the STM32N6570-DK, derived by reading the
 two cloned ST working trees rather than GitHub. Every path below is real and was opened.
 
-- Base app: `vendor/STM32N6-GettingStarted-Audio/` (v2.2.0, 12-Jan-2025)
+- Base app: `vendor/STM32N6-GettingStarted-Audio/` (**v2.3.0**, commit `46f1f97`, 2026-04-16)
 - LCD donor: `vendor/STM32N6-GettingStarted-ObjectDetection/`
 - Context and gate definitions: `README.md`, `docs/FEASIBILITY.md` — not restated here.
 
 ~~**No board access in this pass.** Nothing below has been run on silicon.~~
-**Gates 3, 4 and 6 have since been run and closed** — see §0 and the per-gate
-sections. Gates 5, 7 and 7b are still plan, not record. Effort is developer-time
-for one person who has read this document.
+~~**Gates 3, 4 and 6 have since been run and closed.** Gates 5, 7 and 7b are still
+plan, not record.~~
+
+> **ALL GATES ARE NOW CLOSED (2026-08-19).** This document is kept as the plan of
+> record, with a `CLOSED` block at the head of each gate saying what was actually
+> built and — more usefully — **where the plan was wrong**. Read those blocks
+> first.
+>
+> **Paths inside the item tables name files as *planned*, not as built.**
+> `firmware/Makefile`, `firmware/bsp/`, `firmware/src/audio_capture.c`,
+> `firmware/inc/ai_model_config.h` and `firmware/scripts/gen_model.sh` do not
+> exist: the build goes through the vendored Makefile's `EXTRA_SOURCES` hook, the
+> LCD files live in `firmware/lcd/`, the capture path is in the vendored
+> `audio_bm.c` via `firmware/vendor-mods/gate4.patch`, and the compile driver is
+> `compile/gen_model.sh`. [`../QUICKSTART.md`](../QUICKSTART.md) is what to
+> follow if you want to build this; this file is why it looks the way it does.
+
+Effort is developer-time for one person who has read this document.
 
 Legend: **RISKY** = can fail in a way that invalidates a design assumption ·
 *mechanical* = tedious but the outcome is known.

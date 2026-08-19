@@ -120,14 +120,14 @@ loss with the scratchpad is why this document exists.
 **Fixed 2026-08-19**: the script now prints the real command,
 `compile/gen_model.sh artifacts/onnx/q800_relu4d_all.onnx deploy --install`, and
 its closing note points at `firmware/vendor-mods/gate4.patch` rather than at the
-`audio_bm.gate4.c.patch` that §2 shows is not a patch.
+`audio_bm.gate4.c.patch`, a fragment that was never a patch and has since been deleted; `gate4.patch` supersedes it.
 
 ---
 
 ## 2. The Gate 4 `audio_bm.c` patch
 
 `apply_vendor_mods.sh:106-107` ends by saying the `gate4_canned()` path is
-"applied separately — see `firmware/vendor-mods/audio_bm.gate4.c.patch`".
+"applied separately" and named a fragment file that has since been deleted — `firmware/vendor-mods/gate4.patch` is the whole of it.
 
 **That file is not a patch.** It is 80 lines, 2,594 bytes, contains no `---` /
 `+++` / `@@` markers, and is a truncated verbatim copy of the *head* of the

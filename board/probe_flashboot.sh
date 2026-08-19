@@ -28,10 +28,11 @@ set -euo pipefail
 # (this repository is stm32n6-stt).
 R="$(cd "$(dirname "$0")/.." && pwd)"
 
-CLT=/home/claroche/opt/st/stm32cubeclt_1.21.0
+STT_QUIET=1 . "$(cd "$(dirname "$0")/.." && pwd)/env.sh"
+CLT=$(dirname "$(dirname "$ARM_BIN")")
 GDBSRV=$CLT/STLink-gdb-server/bin/ST-LINK_gdbserver
 GDB=$CLT/GNU-tools-for-STM32/bin/arm-none-eabi-gdb
-CPBIN=/home/claroche/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin
+CPBIN=$STM32CUBEPROG/bin
 ELF=${1:-$R/vendor/STM32N6-GettingStarted-Audio/Projects/GS/BuildGCC/BM/GS_Audio_N6.elf}
 PORT=61300
 OUT=${TMPDIR:-/tmp}/gate4_probe

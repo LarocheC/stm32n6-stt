@@ -14,7 +14,8 @@ set -u
 # (this repository is stm32n6-stt).
 R="$(cd "$(dirname "$0")/.." && pwd)"
 V=$R/vendor/STM32N6-GettingStarted-Audio
-CP=/home/claroche/STMicroelectronics/STM32Cube/STM32CubeProgrammer
+STT_QUIET=1 . "$(cd "$(dirname "$0")/.." && pwd)/env.sh"
+CP=$STM32CUBEPROG
 CLI=$CP/bin/STM32_Programmer_CLI
 EL=$CP/bin/ExternalLoader/MX66UW1G45G_STM32N6570-DK.stldr
 T=$(mktemp -d)

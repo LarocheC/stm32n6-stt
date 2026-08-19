@@ -17,7 +17,7 @@ import sys, time
 try:
     import serial
 except ImportError:
-    sys.exit("pyserial missing: source /home/claroche/stm32n6-deployment-zoo/.venv/bin/activate")
+    sys.exit("pyserial missing: pip install pyserial  (see QUICKSTART.md)")
 
 PORT = "/dev/ttyACM0"
 secs = float(sys.argv[1]) if len(sys.argv) > 1 else 15.0

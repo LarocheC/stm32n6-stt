@@ -46,7 +46,7 @@ and a different slice. Both were checked.
 | `run_int8` | `eval/run_int8.py` | 120 | **11** | 0 | 0 |
 | `run_8s` | `eval/run_8s.py` | 150 | **6** | 0 | **2** |
 | `run_fe` / `run_gain` | `eval/run_fe.py`, `run_gain.py` | 100 | **7** | 0 | 0 |
-| `run_snr` / `run_room` | `eval/run_snr.py`, `run_room.py` | 120 | **11** | 0 | 0 |
+| `run_snr` / `run_room` | `eval/run_snr.py`; `run_room.py` since deleted, see `eval/README.md` | 120 | **11** | 0 | 0 |
 | `run_ab` | `eval/run_ab.py` | 120 | **13** | 0 | 0 |
 | `run_occ` part 1 | `eval/run_occ.py` | 38 | **7** | 0 | 0 |
 | `run_pad` | `eval/run_pad.py` | 38 | **7** | 0 | 0 |

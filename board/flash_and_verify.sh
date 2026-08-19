@@ -18,18 +18,24 @@ set -euo pipefail
 # (this repository is stm32n6-stt).
 R="$(cd "$(dirname "$0")/.." && pwd)"
 
-CP=/home/claroche/STMicroelectronics/STM32Cube/STM32CubeProgrammer
-CLI=$CP/bin/STM32_Programmer_CLI
-EL=$CP/bin/ExternalLoader/MX66UW1G45G_STM32N6570-DK.stldr
+# Tool locations come from env.sh, which takes them from the environment when
+# they are already set. See QUICKSTART.md.
+# shellcheck source=../env.sh
+STT_QUIET=1 . "$R/env.sh"
+CLI=$STM32_PROGRAMMER_CLI
+EL=$STM32_EXTLOADER
+[ -x "$CLI" ] || { echo "STM32_Programmer_CLI not found. Set STM32CUBEPROG (see QUICKSTART.md)."; exit 1; }
+[ -f "$EL" ]  || { echo "external loader not found at $EL. Set STM32CUBEPROG."; exit 1; }
 GS=$R/vendor/STM32N6-GettingStarted-Audio/Projects/GS
 APP=$GS/BuildGCC/BM/GS_Audio_N6_sign.bin
 OUT=${TMPDIR:-/tmp}/gate4_readback
 
 APP_ADDR=0x70100000
-# The app slot ends wherever the weights begin. ST's stock layout puts them at
-# 0x70180000, giving 512 KB; the Citrinet build relocates them to 0x70400000,
-# which gives the app 3 MB. Pass the weights address as $2 and it is used here.
-SLOT_END=${2:-0x70180000}
+# The app slot ends wherever the weights begin. This project relocates them to
+# 0x70400000, giving the app 3 MB -- ST's stock layout puts them at 0x70180000
+# and gives 512 KB, which the Citrinet image does not fit. The default is this
+# project's layout; pass a different weights address as $2 for ST's.
+SLOT_END=${2:-0x70400000}
 
 [ -f "$APP" ] || { echo "no signed app at $APP -- build and sign first"; exit 1; }
 mkdir -p "$OUT"
@@ -51,7 +57,7 @@ echo "     fits the $LIMIT B slot below $(printf 0x%x $SLOT_END) with $(( LIMIT 
 # The FSBL actually takes the entry from the app's vector table at 0x34000404,
 # but a mismatch here means the payload did not land at file offset 0x400 --
 # which is the -align bug from Gate 3 (board/GATE3.md).
-NM=/home/claroche/opt/st/stm32cubeclt_1.21.0/GNU-tools-for-STM32/bin/arm-none-eabi-nm
+NM=$ARM_BIN/arm-none-eabi-nm
 HDR=$(xxd -e -g4 -s 0x70 -l 4 "$APP" | awk '{print $2}')
 RST=$($NM "${APP%_sign.bin}.elf" | awk '/ Reset_Handler/{print $1}' | sed 's/^0*//' \
       | awk '{printf "%08x\n", strtonum("0x"$1)+1}')

@@ -58,7 +58,7 @@ def eval_fe(recs):          # eval/run_fe.py and eval/run_gain.py
     return [pool[i] for i in _perm(len(pool), 0)[:100]]
 
 
-def eval_snr(recs):         # eval/run_snr.py and eval/run_room.py
+def eval_snr(recs):         # eval/run_snr.py (and the deleted run_room.py)
     pool = [r for r in recs if r["d"] <= 3.5]
     return [pool[i] for i in _perm(len(pool), 0)[:120]]
 

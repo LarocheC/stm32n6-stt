@@ -4,6 +4,13 @@ Push-to-talk English speech recognition running entirely on an STM32N6570-DK:
 microphone → log-mel on the Cortex-M55 → **Citrinet-256 CTC encoder on the
 Neural-ART NPU** → greedy CTC decode → text on the 800×480 LCD.
 
+### → [**QUICKSTART.md**](QUICKSTART.md) — clone, build, flash, talk
+
+Note before you start: `vendor/` (ST's packages) and `artifacts/` (4.8 GB of
+compiler workspaces and a model derived from third-party weights) are **not in
+git**. QUICKSTART §1–2 says how to get both. Everything this project *wrote* is
+in the clone.
+
 ## Status
 
 **Feasibility settled, GO. Gates 0–7b are closed — the project is complete.** The model
@@ -164,6 +171,9 @@ reads `scale=8.297212 = 1 / 0.120522417128086` back at runtime.
 ## Layout
 
 ```
+QUICKSTART.md  clone -> build -> flash -> talk. Start here.
+env.sh         where the external tools live; every script sources it
+
 model/      graph surgery, quantisation, the two NPU workarounds, and the NumPy
             reference frontend (fe.py is the C implementation's spec AND its
             test oracle; fe_reference.py carries each constant's provenance)
@@ -171,14 +181,21 @@ eval/       WER harness — window, int8, SNR, reverberation, gain, frontend abl
 eval/results/  measured outputs of the above
 compile/    the audio-pool mpools + profile, the compile driver (gen_model.sh),
             the build scorer (score_build.py), and per-window compile evidence
-firmware/   the C front end and C decoder, their generators and host tests, the
-            file-level work list, and the vendor-tree patches
-board/      the build/sign/flash recipe, the Gate 3 and Gate 4 records, the
-            blocker-2 reproducer, and the raw UART traces behind every board claim
+firmware/   build.sh (build + sign, four profiles), the C front end and C decoder,
+            their generators and host tests, the file-level work list, and
+            vendor-mods/gate4.patch — which IS the application
+firmware/lcd/  the nine LCD files grafted from ST's ObjectDetection package,
+            in that package's directory layout so their relative #includes work
+board/      the build/sign/flash recipe, flash_and_verify.sh (writes and reads
+            back), the Gate 3 and Gate 4 records, the blocker-2 reproducer, and
+            the raw UART traces behind every board claim
 tokenizer/  1025-piece vocabulary and the SentencePiece model
 docs/       the feasibility assessment and upstream provenance
-artifacts/  (gitignored) rescued ONNX graphs, weights, per-tag compile
-            workspaces, the corpus blob, signed board images
+zoo-contrib/  findings written up for the deployment-zoo this work fed back into
+
+vendor/     (NOT in git) ST's two application packages — QUICKSTART §1
+artifacts/  (NOT in git) ONNX graphs, weights, per-tag compile workspaces, the
+            corpus blobs, signed board images — QUICKSTART §2
 ```
 
 ## Accuracy, measured on the host
@@ -232,7 +249,36 @@ invisible at n = 64. It is one corpus (clean read speech ≤ 7.69 s) and one dec
 it uses **host-computed features**, so it isolates the NPU and says nothing about
 the on-device front end.
 
-## Next
+## What is left
+
+**Nothing is blocking. Every gate is closed and the board works.** What follows
+is the honest list of what a next session would pick up, in the order I would
+pick it up.
+
+1. **Accuracy is a model problem, not a port problem.** Live free-form speech
+   from an accented speaker measures ~30 % WER, against 3.2 % for LibriSpeech
+   played at the same microphone and 4.3 % for host-computed features. Level,
+   int16 quantisation, SNR, reverberation and the front end are each ruled out by
+   measurement (`firmware/FRONTEND.md` §§12–15), and the fp32 reference model
+   makes the same errors on the same audio (§15). The fix is a fine-tuned or
+   multi-accent Citrinet — and because `model/fold_stride2.py`,
+   `model/break_relu_chain.py` and `compile/gen_model.sh` work on graph structure
+   rather than weights, a new checkpoint re-runs the identical pipeline with **no
+   firmware work at all**.
+2. **Report the two NPU defects to ST.** `board/REPRO-blocker2.md` is a 9-node
+   reproducer for the second one. Neither is documented, both compile cleanly and
+   report 0 software epochs, and both hang the part forever.
+3. **Streaming.** The design is one 8 s window at a time. A sliding window with
+   overlap-and-discard would give continuous captioning; the front end already
+   has the incremental entry points (`citrinet_fe_column`, `citrinet_fe_finish`)
+   that `firmware/WORKLIST.md` §5.7 was written around.
+4. **The 800-frame window is a choice, not a constraint.** 4 s and 12 s graphs
+   are quantised and scored (`model/q1200.py`, `quant_real.py`); 12 s costs
+   proportionally more NPU time and 4 s less.
+5. **Untouched by design:** touch (no GT911 driver exists in either ST package),
+   the FreeRTOS and low-power build variants, and USB audio.
+
+### The gate history, kept because the reasoning is worth reading
 
 Gates 0–7 are closed, Gates 5 and 7 both on 2026-08-19. **The transcript is on
 the 800×480 panel** — a blue header, the decoded text word-wrapped in Font20, and

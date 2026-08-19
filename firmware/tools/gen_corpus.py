@@ -45,7 +45,9 @@ TENSOR  = NMEL * T                # 64000 B
 # argmax; this is the one the board is actually running (GATE4.md Round 19).
 MODEL   = "artifacts/onnx/q800_relu4d_all.onnx"
 
-# recs.json's 'f' paths are stale — they name the tts repo, which does not exist.
+# recs.json records absolute audio paths from the directory this corpus was
+# first indexed in. They are DATA provenance, not a tool location: the line
+# below rewrites them onto this checkout's corpus/. Nothing to configure.
 STALE_PREFIX = "/home/claroche/stm32n6-tts/corpus/"
 LIVE_PREFIX  = os.path.join(REPO, "corpus") + "/"
 
@@ -66,10 +68,6 @@ def load_fe():
     so the two loaders cannot drift."""
     path = os.path.join(REPO, "model", "fe.py")
     src = open(path).read()
-    src = src.replace(
-        "/tmp/claude-1000/-home-claroche-stm32n6-tts/"
-        "f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/citrinet/vocab.txt",
-        os.path.join(REPO, "tokenizer", "vocab.txt"))
     fe = type(sys)("fe"); fe.__file__ = path
     exec(compile(src, "fe.py", "exec"), fe.__dict__)
     return fe

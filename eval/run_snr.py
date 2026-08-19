@@ -1,3 +1,9 @@
+# NOT RUNNABLE AS CHECKED IN. This script belongs to the Gate 1 host evaluation
+# and reads a helper module and a data directory from the scratch tree it was
+# written in, which no longer exists. It is kept as the PROVENANCE of the numbers
+# in eval/results/ and eval/GATE1.md -- so the published figures have visible
+# code behind them -- not as a tool to run. Retargeting the two paths at the top
+# is Gate 0/1 work; nothing in QUICKSTART.md depends on it.
 import sys, json, time, numpy as np, soundfile as sf, onnxruntime as ort, glob
 sys.path.insert(0,'/tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/adv')
 import fe

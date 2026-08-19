@@ -9,7 +9,8 @@ set -euo pipefail
 
 R="$(cd "$(dirname "$0")/.." && pwd)"
 V="$R/vendor/STM32N6-GettingStarted-Audio"
-STEDGEAI=/home/claroche/stedgeai/install/4.0
+STT_QUIET=1 . "$(cd "$(dirname "$0")/.." && pwd)/env.sh"
+STEDGEAI=$STEDGEAI_ROOT
 [ -d "$V" ] || { echo "clone STM32N6-GettingStarted-Audio into vendor/ first"; exit 1; }
 
 say() { printf '  %s\n' "$*"; }
@@ -88,13 +89,29 @@ grep -q "0x8000" "$V/Projects/GS/STM32CubeIDE/STM32N657XX_LRUN.ld" && say "ok"
 echo "[6] model — install Citrinet over the built-in AED"
 M="$V/Projects/X-CUBE-AI/models"
 G="$R/artifacts/model_c"
+# The graph MUST be the post-fold, post-relu4d one. artifacts/model_c/ once held
+# the pre-fold build, which compiles cleanly, reports 0 software epochs, and
+# stalls the NPU forever (board/GATE4.md rounds 10-19). Check before installing,
+# rather than discovering it as a board that boots and then never answers.
+WANT_NET_MD5=d8806930c51a4a34aa02f78e2a0a0668
+WANT_W_MD5=c81d84a7a9cbff549bfa9fa4df8923ff
 if [ -f "$G/network.c" ]; then
+  got_net=$(md5sum < "$G/network.c" | cut -d' ' -f1)
+  got_w=$(md5sum < "$G/network_atonbuf.xSPI2.raw" | cut -d' ' -f1)
+  if [ "$got_net" != "$WANT_NET_MD5" ] || [ "$got_w" != "$WANT_W_MD5" ]; then
+    say "REFUSING: artifacts/model_c is not the deployed graph."
+    say "  network.c md5 $got_net, want $WANT_NET_MD5"
+    say "  weights   md5 $got_w, want $WANT_W_MD5"
+    say "  rebuild with: compile/gen_model.sh artifacts/onnx/q800_relu4d_all.onnx deploy --install"
+    say "  see artifacts/model_c/MANIFEST.txt"
+    exit 1
+  fi
   for f in network.c network.h stai_network.c stai_network.h; do
     [ -f "$M/$f.aedbak" ] || cp "$M/$f" "$M/$f.aedbak"
     cp "$G/$f" "$M/$f"
   done
   cp "$G/network_atonbuf.xSPI2.raw" "$M/network_data.bin"
-  say "installed ($(stat -c%s "$M/network_data.bin") B of weights)"
+  say "installed ($(stat -c%s "$M/network_data.bin") B of weights, md5 verified)"
 else
   say "artifacts/model_c missing -- run:"
   say "  compile/gen_model.sh artifacts/onnx/q800_relu4d_all.onnx deploy --install"
@@ -102,12 +119,13 @@ fi
 
 echo
 echo "Done. Build with:"
-echo "  make bm -j8 GCC_PATH=/home/claroche/opt/st/stm32cubeclt_1.21.0/GNU-tools-for-STM32/bin \\"
+echo "  make bm -j8 GCC_PATH=$ARM_BIN \\"
 echo "       EXTRA_CFLAGS=\"-DGATE4_CANNED -I$R/firmware/inc\""
 echo "NOTE: the Gate 4 instrumentation (audio_bm.c/.h, app_config.h,"
 echo "      stm32n6xx_it.c) is applied separately:"
 echo "        git -C vendor/STM32N6-GettingStarted-Audio apply \\"
 echo "            $R/firmware/vendor-mods/gate4.patch"
 echo "      See board/BUILD.md sections 1-2. The older"
-echo "      firmware/vendor-mods/audio_bm.gate4.c.patch is NOT a patch -- it has"
-echo "      no diff markers and stops mid-function; gate4.patch supersedes it."
+echo "      firmware/vendor-mods/gate4.patch is the application: capture path,"
+echo "      front end call, CTC decode, LCD, push-to-talk and instrumentation."
+echo "      It reverse-applies cleanly, so git apply -R undoes it."

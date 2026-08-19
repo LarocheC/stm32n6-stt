@@ -98,14 +98,9 @@ FEAT_BLOB = os.path.join(REPO, "artifacts", "corpus", "corpus_blob.bin")
 # ------------------------------------------------------------------ front end
 def load_fe():
     """model/fe.py is the authoritative spec.  Loaded exactly the way
-    gen_corpus.py:load_fe() loads it, replacement and all, so the two cannot
-    drift."""
+    gen_corpus.py:load_fe() loads it, so the two cannot drift."""
     path = os.path.join(REPO, "model", "fe.py")
     src = open(path).read()
-    src = src.replace(
-        "/tmp/claude-1000/-home-claroche-stm32n6-tts/"
-        "f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/citrinet/vocab.txt",
-        os.path.join(REPO, "tokenizer", "vocab.txt"))
     fe = type(sys)("fe"); fe.__file__ = path
     exec(compile(src, "fe.py", "exec"), fe.__dict__)
     return fe

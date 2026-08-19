@@ -55,9 +55,6 @@ def load_fe():
     hardcoded scratchpad vocab path into it; that path is gone from the current
     fe.py (it uses _REPO), but the replace is kept so both scripts stay in step."""
     src = open(f"{REPO}/model/fe.py").read()
-    src = src.replace(
-        "/tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/citrinet/vocab.txt",
-        f"{REPO}/tokenizer/vocab.txt")
     fe = type(sys)("fe"); fe.__file__ = f"{REPO}/model/fe.py"
     exec(compile(src, "fe.py", "exec"), fe.__dict__)
     return fe

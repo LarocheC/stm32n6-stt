@@ -27,9 +27,6 @@ LIVE_PREFIX  = os.path.join(REPO, "corpus") + "/"
 
 # fe.py carries a hardcoded scratchpad path for the vocab; load it with that patched
 src = open(f"{REPO}/model/fe.py").read()
-src = src.replace(
-    "/tmp/claude-1000/-home-claroche-stm32n6-tts/f2087db5-f2ba-4413-ba1b-2f3dbcb6780e/scratchpad/citrinet/vocab.txt",
-    f"{REPO}/tokenizer/vocab.txt")
 fe = type(sys)("fe"); fe.__file__ = f"{REPO}/model/fe.py"
 exec(compile(src, "fe.py", "exec"), fe.__dict__)
 

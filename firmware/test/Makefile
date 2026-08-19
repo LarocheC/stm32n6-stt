@@ -20,7 +20,8 @@ ARMFLAGS := -mcpu=cortex-m55 -mthumb -mfpu=fpv5-d16 -mfloat-abi=hard -Os -std=c9
             -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Werror \
             -ffunction-sections -fdata-sections -I$(INC)
 
-VENV    ?= /home/claroche/stm32n6-deployment-zoo/.venv
+# Any interpreter with numpy/librosa/soundfile/onnxruntime. See QUICKSTART.md.
+VENV    ?= $(HOME)/.venvs/stm32n6-stt
 
 .PHONY: all selftest oracle arm vocab clean
 

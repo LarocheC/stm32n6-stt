@@ -46,10 +46,11 @@ set -euo pipefail
 # whatever 3.0 ships) and the ll_aton the firmware links against, which
 # network.c enforces with a hard #error -- see firmware/apply_vendor_mods.sh
 # step 1.
-STEDGEAI_ROOT=/home/claroche/stedgeai/install/4.0
+STT_QUIET=1 . "$(cd "$(dirname "$0")/.." && pwd)/env.sh"
+: "${STEDGEAI_ROOT:?set STEDGEAI_ROOT or edit env.sh -- see QUICKSTART.md}"
 STEDGEAI="$STEDGEAI_ROOT/Utilities/linux/stedgeai"
 STEDGEAI_EXPECT="v4.0.1-20581"
-ARM_BIN=/home/claroche/opt/st/stm32cubeclt_1.21.0/GNU-tools-for-STM32/bin
+: "${ARM_BIN:?set ARM_BIN or edit env.sh -- see QUICKSTART.md}"
 OBJCOPY="$ARM_BIN/arm-none-eabi-objcopy"
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
