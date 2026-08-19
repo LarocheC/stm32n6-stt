@@ -36,8 +36,7 @@ DEF="-DCITRINET_FE_USE_CMSIS=1"
 case "$PROFILE" in
   demo)
     DEF="$DEF -DGATE4_CANNED -DGATE5_WAV -DGATE5_MIC -DGATE7_LCD"
-    SRC="$SRC $R/firmware/src/stm32_lcd_ex.c \
-             $L/BSP/STM32N6570-DK/stm32n6570_discovery_lcd.c \
+    SRC="$SRC $L/BSP/STM32N6570-DK/stm32n6570_discovery_lcd.c \
              $L/Utilities/lcd/stm32_lcd.c \
              ../../Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_ltdc.c \
              ../../Drivers/STM32N6xx_HAL_Driver/Src/stm32n6xx_hal_ltdc_ex.c \

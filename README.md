@@ -406,6 +406,19 @@ that invalidates the model. Everything is planned to file level in
 document was written is in [`docs/GATES-1-2.md`](docs/GATES-1-2.md) §2 and
 [`firmware/WORKLIST.md`](firmware/WORKLIST.md) §0.
 
+## Licence
+
+**[Apache-2.0](LICENSE)** for everything this project wrote — the firmware, the
+graph rewrites, the compile driver, the host tooling and the documentation.
+Chosen over MIT for its explicit patent grant, and compatible with the
+BSD-3-Clause and Apache-2.0 components alongside it.
+
+The nine LCD files in `firmware/lcd/` are STMicroelectronics' under
+**BSD-3-Clause**, and the tokenizer and model derive from NVIDIA's Citrinet-256.
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) has the per-file detail,
+including why `artifacts/` is not redistributed here and why one ST file was
+deleted rather than shipped.
+
 ## Related
 
 [`stm32n6-deployment-zoo`](https://github.com/LarocheC/stm32n6-deployment-zoo) —
