@@ -446,3 +446,80 @@ time, which is all a push-to-talk captioner needs.
 configurations. The only diagnostics that appear at that level come from CMSIS's
 own `dsp/utils.h` and `dsp/none.h`, so the strict build is available whenever
 `CITRINET_FE_USE_CMSIS=0`.
+
+---
+
+## 9. First silicon — 2026-08-19
+
+`citrinet_fe.c` has now run on the M55. Image `artifacts/images/gate5_wav/`,
+16 canned waveforms replayed from external flash at `0x72000000` through the
+front end, then the NPU, in one build. Trace:
+[`board/traces/round21_wav_replay.log`](../board/traces/round21_wav_replay.log).
+
+### Cost, which is what this run existed to measure
+
+| stage | cycles | at 600 MHz |
+|---|---:|---:|
+| **log-mel front end (M55)** | 81,535,764 – 81,744,426 | **135.9 – 136.2 ms** |
+| NPU encoder | 84,037,302 – 84,041,070 | 140.1 ms |
+| **total per 8 s utterance** | | **~276 ms** |
+
+**The front end costs as much as the whole NPU encoder.** `WORKLIST §5` called the
+M55 cost "Unverified"; it is now measured, and it is the dominant half of a
+push-to-talk latency budget rather than a rounding error on the NPU's.
+
+The front-end figure varies with `guard_below` (81.54 M at 8,260 bins below the
+guard, 81.74 M at 48,374) — `logf` on very small arguments is not constant-time.
+Spread across the 16 is 0.26 %.
+
+### An instrument trap, and it cost a run
+
+**`AiDPUProcess()` resets the PMU cycle counter internally.** The first build
+reset once, timed the front end, then timed the invoke from the front end's end
+stamp — and reported the NPU at 1.7-1.9 M cycles while the two stages summed to a
+suspiciously constant 83.45 M. That constant was the runtime's own measurement of
+the invoke; the "NPU" figure was `84 M − 81.6 M`. Resetting before each stage and
+printing the raw reads (`t0=0 t1=81535764 | n0=0 n1=84038343`) settled it.
+
+Anything timing around `AiDPUProcess()` must call `port_dwt_reset()` itself. The
+tell was that the split tracked `guard` while the sum did not move: two
+fixed-cost stages cannot trade time.
+
+### Parity against the host: 11 of 16 bit-exact
+
+| | |
+|---|---|
+| feature tensors byte-identical to the host (FNV-1a 32 over 64,000 B) | **11 / 16** |
+| differing | u0, u9, u11, u13, u15 |
+| **`guard_below` agreeing exactly** | **16 / 16** |
+| front-end return code | `rc 0` on 15; `rc -4` on u2 |
+
+**Every guard count matches**, which bounds the disagreement: the two
+implementations are seeing the same levels and the same near-zero mel energies,
+so the differences are small numerical ones, not a structural mistake.
+
+**u11 was predicted.** `1272-141231-0012` is the one truncated utterance; the
+device sees a 128,000-sample buffer where `gen_corpus.py` used 127,841, so
+pre-emphasis at sample 127,841 computes `0 − 0.97·x[127840]`, a value the host
+never saw. `wav_ref.json` carries both hashes for it.
+
+**u0, u9, u13 and u15 were not predicted, and are the open question.** On the
+host, this configuration (CMSIS `arm_rfft_fast_f32`, float32 scratch) reproduces
+`model/fe.py` exactly — 0 of 768,000 values over 12 utterances. Something the
+M55 does differs on 4 of 16 here. Candidates, none yet tested:
+CMSIS-DSP's `arm_rfft_fast_f32` taking a different code path on Helium than on
+x86; `rintf` rounding mode; FMA contraction changing the mel dot products; the
+`logf` implementation differing between newlib-nano and glibc.
+
+**u2 reporting `rc -4` is correct, not a fault.** `5694-64025-0000` is 1.67 s of
+speech in an 8 s window, so 62.5 % of its mel bins fall below the log guard
+against a 50 % threshold derived from utterances that fill the window. It is one
+of the loudest at −4.38 dBFS. The threshold, not the audio, is what needs
+revisiting for short utterances.
+
+### Next
+
+Localise the four. `firmware/test/score_wav.py` already implements the host side
+of a per-mel-row FNV-1a (80 rows of 800 bytes); a rebuild that prints 80 row
+hashes turns "4 utterances differ" into "these mel bins, these frames" without
+further host work.

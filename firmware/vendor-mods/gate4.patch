@@ -35,20 +35,60 @@ index 3c5cd91..a751b53 100644
    AudioPreProcCtx_t audioPreCtx;
    AudioPostProcCtx_t audioPostCtx;
  #if (CTRL_X_CUBE_AI_AUDIO_OUT==COM_TYPE_HEADSET)
+diff --git a/Projects/GS/Makefile b/Projects/GS/Makefile
+index d4ebc45..8162f80 100644
+--- a/Projects/GS/Makefile
++++ b/Projects/GS/Makefile
+@@ -146,6 +146,13 @@ C_SOURCES += \
+ ../../Middlewares/ST/STM32_AI_AudioPreprocessing_Library/Src/window.c\
+ ../../Middlewares/ST/STM32_AI_AudioPreprocessing_Library/Src/window_f16.c\
+ 
++# stm32n6-stt: extension point for sources that live in this repository rather
++# than in the vendored tree (firmware/src/citrinet_fe.c, citrinet_ctc.c).
++# Appending to C_SOURCES is what makes them reach C_SOURCES_BM in bm.mk and, via
++# $(dir ...), the vpath in SRC_DIRS -- so a bare -I is not enough, the .c files
++# must be listed here.
++C_SOURCES += $(EXTRA_SOURCES)
++
+ # ASM sources
+ AS_SOURCES = ../../Drivers/CMSIS/Device/ST/STM32N6xx/Source/Templates/gcc/startup_stm32n657xx.s
+ 
+@@ -225,6 +232,9 @@ C_INCLUDES = \
+ OPT  += -c -Wall -fstack-usage -fdata-sections -ffunction-sections \
+ -fcyclomatic-complexity -flax-vector-conversions --specs=nano.specs
+ OPT  += -MMD -MP -MF"$(@:%.o=%.d)" -MT"$@"
++# stm32n6-stt: extension point. Overriding OPT on the command line silently
++# discards every "OPT +=" above it, including -flax-vector-conversions.
++OPT  += $(EXTRA_CFLAGS)
+ 
+ C_FLAGS = $(MCU) $(C_DEFS) $(C_INCLUDES) $(OPT)
+ 
+@@ -245,7 +255,7 @@ AS_FLAGS += --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb
+ LDSCRIPT = STM32CubeIDE/STM32N657XX_LRUN.ld
+ 
+ # libraries
+-LIBS = -lc -lm -lnosys -l:NetworkRuntime1200_CM55_GCC.a
++LIBS = -lc -lm -lnosys -l:NetworkRuntime1201_CM55_GCC.a
+ LIBDIR = -L../../Middlewares/ST/AI/Lib/GCC/ARMCortexM55
+ LD_FLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS)
+ LD_FLAGS += -Wl,--cref -Wl,--gc-sections
 diff --git a/Projects/GS/Src/audio_bm.c b/Projects/GS/Src/audio_bm.c
-index 8e3d175..d384dda 100644
+index 8e3d175..4992381 100644
 --- a/Projects/GS/Src/audio_bm.c
 +++ b/Projects/GS/Src/audio_bm.c
-@@ -34,6 +34,18 @@
+@@ -34,6 +34,21 @@
  #include "AudioCapture_ring_buff.h"
  #include "preproc_dpu.h"                           /* Preprocessing includes  */
  #include "postproc_dpu.h"                          /* Postprocessing includes */
 +
-+#if defined(GATE4_CANNED) || defined(GATE4_CORPUS)
++#if defined(GATE4_CANNED) || defined(GATE4_CORPUS) || defined(GATE5_WAV)
 +#include <string.h>
 +#include "mcu_cache.h"
 +#include "canned_features.h"
 +#include "stai_network.h"
++#endif
++#ifdef GATE5_WAV
++#include "citrinet_fe.h"
 +#endif
 +#ifdef GATE4_BEACON
 +#include "ll_aton_NN_interface.h"
@@ -58,7 +98,7 @@ index 8e3d175..d384dda 100644
  #include "ai_dpu.h"                                /* AI includes             */
  #include "test.h"
  #include "audio_bm.h"
-@@ -72,8 +84,15 @@ static bool AudioProcIsOn;
+@@ -72,8 +87,15 @@ static bool AudioProcIsOn;
  
  #ifdef APP_BARE_METAL
  static AudioBM_acq_t  audio_acq_ctx;
@@ -74,7 +114,7 @@ index 8e3d175..d384dda 100644
  #if (CTRL_X_CUBE_AI_AUDIO_OUT==COM_TYPE_HEADSET)
  int16_t  playback_buf[PLAYBACK_BUFFER_SIZE] __NON_CACHEABLE;
  #endif
-@@ -87,6 +106,133 @@ static const char *sAiAudioClassLabels[CTRL_X_CUBE_AI_MODEL_CLASS_NUMBER] = \
+@@ -87,6 +109,133 @@ static const char *sAiAudioClassLabels[CTRL_X_CUBE_AI_MODEL_CLASS_NUMBER] = \
    * @param  None
    * @retval None
    */
@@ -208,7 +248,7 @@ index 8e3d175..d384dda 100644
  void init_bm(void)
  {
    /* Power on ICACHE */
-@@ -96,6 +242,19 @@ void init_bm(void)
+@@ -96,6 +245,19 @@ void init_bm(void)
    __HAL_RCC_CPUCLK_CONFIG(RCC_CPUCLKSOURCE_HSI);
    __HAL_RCC_SYSCLK_CONFIG(RCC_SYSCLKSOURCE_HSI);
  
@@ -228,7 +268,7 @@ index 8e3d175..d384dda 100644
    HAL_Init();
  
    SystemClock_Config_Full();
-@@ -108,25 +267,60 @@ void init_bm(void)
+@@ -108,25 +270,60 @@ void init_bm(void)
    fuse_vddio();
  #endif
  
@@ -297,7 +337,7 @@ index 8e3d175..d384dda 100644
  
    /* by default processing is active */
    AudioProcIsOn = true;
-@@ -138,9 +332,243 @@ void init_bm(void)
+@@ -138,9 +335,417 @@ void init_bm(void)
    * @param  None
    * @retval None
    */
@@ -526,10 +566,184 @@ index 8e3d175..d384dda 100644
 +}
 +#endif /* GATE4_CORPUS */
 +
++#ifdef GATE5_WAV
++/* stm32n6-stt: Gate 5 bring-up -- replay canned WAVEFORMS through the real
++ * front end on the M55, then the NPU, in one image.
++ *
++ * Gate 4 proved the NPU (board/GATE4.md Round 19: 448 epochs, 124.0 ms) using
++ * HOST-computed features. firmware/src/citrinet_fe.c reproduces model/fe.py
++ * exactly on a workstation -- 0 of 768,000 int8 values differ -- but has never
++ * run on this silicon, and its cost here is the largest unmeasured number in the
++ * project (firmware/FRONTEND.md section 7). This path measures it and proves
++ * waveform -> features -> NPU end to end, without touching the microphone or the
++ * gain stage.
++ *
++ * MEMORY. The front end needs 256,000 B of pass-1 scratch in the SHIPPING
++ * float32 configuration; the fp16 variant halves it but costs 3,982 of 768,000
++ * int8 values (FRONTEND.md section 5), which would confound the very comparison
++ * this run exists to make. Together with a 256,000 B PCM buffer that does not fit
++ * beside the model in the 1023 K RAM region.
++ *
++ * It does not have to. docs/MEMORY-MAP.md records AXISRAM3/4/5 (448 K each at
++ * 0x34200000/0x34270000/0x342E0000) as holding NOTHING: the linker script
++ * declares only AXISRAM1, and ST's mpool gives the model only cpuRAM2 and
++ * npuRAM6. Int_Mem_Config() already clocks them out of shutdown
++ * (RCC_MEMENR_AXISRAM3EN|4EN|5EN). So the two big buffers go there, and the
++ * application's own region is untouched.
++ *
++ * Both banks are probed before use rather than assumed -- a bank that is not
++ * clocked reads back garbage, and silently scoring garbage would be worse than
++ * not running.
++ */
++#define GATE5_WAV_BASE     0x72000000u   /* waveform blob in external flash     */
++#define GATE5_PCM_RAM      0x34200000u   /* AXISRAM3, 448 K, unused by the mpool*/
++#define GATE5_SCRATCH_RAM  0x34270000u   /* AXISRAM4, 448 K, unused by the mpool*/
++
++static citrinet_fe_t g5_fe;
++
++/* FNV-1a 32, over the feature tensor. The host computes the same hash, so one
++ * 8-hex-digit field per utterance answers "did the M55 compute the same
++ * features" without sending 64,000 bytes up a 14400-baud line. */
++static uint32_t g5_fnv1a(const uint8_t *p, uint32_t n)
++{
++  uint32_t h = 2166136261u;
++  for (uint32_t i = 0; i < n; i++) { h ^= p[i]; h *= 16777619u; }
++  return h;
++}
++
++static void g5_hex8(uint32_t v)
++{
++  static const char d[] = "0123456789abcdef";
++  for (int i = 28; i >= 0; i -= 4) my_printf("%c", d[(v >> i) & 0xFu]);
++}
++
++/* Write, read back, restore. Returns 1 if the bank holds what it is given. */
++static int g5_probe_ram(uint32_t base)
++{
++  volatile uint32_t *p = (volatile uint32_t *)base;
++  const uint32_t save0 = p[0], save1 = p[1];
++  p[0] = 0xA5A5F00Du; p[1] = 0x5A5A0FF0u;
++  __DSB();
++  const int ok = (p[0] == 0xA5A5F00Du) && (p[1] == 0x5A5A0FF0u);
++  p[0] = save0; p[1] = save1;
++  return ok;
++}
++
++static void gate5_wav(void)
++{
++  const volatile uint32_t *hdr = (const volatile uint32_t *)GATE5_WAV_BASE;
++  const uint32_t magic = hdr[0], n_utt = hdr[1], n_samp = hdr[2];
++
++  my_printf("\r\n# gate5 wav @ %p magic=%08lx N=%lu NSAMPLES=%lu\r\n",
++            (void *)GATE5_WAV_BASE, (unsigned long)magic,
++            (unsigned long)n_utt, (unsigned long)n_samp);
++  my_printf("# fe backend=%d tables_fnv1a=%08lx scratch=%lu B\r\n",
++            citrinet_fe_backend(), (unsigned long)citrinet_fe_tables_fnv1a(),
++            (unsigned long)CITRINET_FE_SCRATCH_BYTES);
++
++  if (magic != 0x57545453u)   /* "STTW" little-endian */
++  {
++    my_printf("# wav magic bad -- expected 57545453, flash the blob to %p\r\n",
++              (void *)GATE5_WAV_BASE);
++    return;
++  }
++  if (n_samp != (uint32_t)CITRINET_FE_NSAMPLES)
++  {
++    my_printf("# wav NSAMPLES %lu != %d -- refusing\r\n",
++              (unsigned long)n_samp, (int)CITRINET_FE_NSAMPLES);
++    return;
++  }
++  if (!g5_probe_ram(GATE5_PCM_RAM) || !g5_probe_ram(GATE5_SCRATCH_RAM))
++  {
++    my_printf("# AXISRAM3/4 did not hold a written pattern -- refusing\r\n");
++    return;
++  }
++
++  int16_t *pcm = (int16_t *)GATE5_PCM_RAM;
++  if (citrinet_fe_init(&g5_fe, (void *)GATE5_SCRATCH_RAM,
++                       CITRINET_FE_SCRATCH_BYTES) != CITRINET_FE_OK)
++  {
++    my_printf("# citrinet_fe_init failed\r\n");
++    return;
++  }
++  if (AiDPULoadModel(&g4_aictx) != DPU_OK)
++  {
++    my_printf("# gate5 wav: AiDPULoadModel FAILED\r\n");
++    return;
++  }
++
++  int8_t *in  = (int8_t *) g4_aictx.p_stai_inputs[0];
++  int8_t *out = (int8_t *) g4_aictx.p_stai_outputs[0];
++  const uint32_t in_bytes  = (uint32_t)STAI_NETWORK_IN_1_SIZE_BYTES;
++  const uint32_t out_bytes = (uint32_t)STAI_NETWORK_OUT_1_SIZE_BYTES;
++  const uint32_t n_frames  = out_bytes / (uint32_t)CANNED_NVOCAB;
++  /* the DPU carries 1/scale; citrinet_fe_finish() divides by the scale itself */
++  const float q_scale = 1.0f / g4_aictx.input_Q_inv_scale;
++  const uint32_t pcm_bytes = n_samp * (uint32_t)sizeof(int16_t);
++
++  for (uint32_t pass = 0; ; pass++)
++  {
++    my_printf("\r\n# ---- wav pass %lu ----\r\n", (unsigned long)pass);
++
++    for (uint32_t i = 0; i < n_utt; i++)
++    {
++      /* Copy the waveform to on-chip RAM FIRST. Pointing the front end straight
++       * at memory-mapped flash would make citrinet_fe_build_frame()'s ~640,000
++       * int16 loads XSPI reads with prefetch disabled ("Hotfix for xspi: no
++       * prefetch", Ext_Mem_Config), and the measurement would be of the flash,
++       * not of the front end. Round 20 saw exactly that cost 13 % on the NPU. */
++      memcpy(pcm, (const void *)(GATE5_WAV_BASE + 0x40u + i * pcm_bytes), pcm_bytes);
++
++      port_dwt_reset();
++      uint32_t t0 = (uint32_t)port_dwt_get_cycles();
++      int rc = citrinet_fe_run(&g5_fe, pcm, n_samp, q_scale, 0, in);
++      uint32_t fe_cycles = (uint32_t)port_dwt_get_cycles() - t0;
++
++      /* Hash BEFORE the invoke: the allocator legitimately aliases the input and
++       * output buffers once the input is dead (board/GATE4.md Round 1), so after
++       * AiDPUProcess() this buffer may hold logits. */
++      uint32_t fhash = g5_fnv1a((const uint8_t *)in, in_bytes);
++
++      mcu_cache_clean_invalidate_range((uint32_t)in, (uint32_t)in + in_bytes);
++
++      t0 = (uint32_t)port_dwt_get_cycles();
++      AiDPUProcess(&g4_aictx);
++      uint32_t npu_cycles = (uint32_t)port_dwt_get_cycles() - t0;
++
++      mcu_cache_invalidate_range((uint32_t)out, (uint32_t)out + out_bytes);
++
++      my_printf("# w %lu fe %lu npu %lu rc %d guard %lu hash ",
++                (unsigned long)i, (unsigned long)fe_cycles,
++                (unsigned long)npu_cycles, rc,
++                (unsigned long)g5_fe.guard_below);
++      g5_hex8(fhash);
++      my_printf(" ids:");
++      for (uint32_t f = 0; f < n_frames; f++)
++      {
++        const int8_t *row = out + f * (uint32_t)CANNED_NVOCAB;
++        int8_t   best_v = row[0];
++        uint32_t best_i = 0;
++        for (uint32_t v = 1; v < (uint32_t)CANNED_NVOCAB; v++)
++          if (row[v] > best_v) { best_v = row[v]; best_i = v; }
++        my_printf(" %lu", (unsigned long)best_i);
++      }
++      my_printf("\r\n");
++    }
++
++    my_printf("# wav done %lu utterances\r\n", (unsigned long)n_utt);
++    HAL_Delay(5000);
++  }
++}
++#endif /* GATE5_WAV */
++
  void exec_bm(void)
  {
    bool cont = true;
-+#if defined(GATE4_CORPUS)
++#if defined(GATE5_WAV)
++  (void)cont;
++  gate5_wav();
++  while (1) { __NOP(); }
++#elif defined(GATE4_CORPUS)
 +  (void)cont;
 +  gate4_corpus();
 +  while (1) { __NOP(); }
@@ -541,7 +755,7 @@ index 8e3d175..d384dda 100644
    time_stats_init();
  
    initAudioProc(&audio_proc_ctx);
-@@ -172,6 +600,7 @@ void exec_bm(void)
+@@ -172,6 +777,7 @@ void exec_bm(void)
  
    test_dump();
    my_printf("\n\r# End Processing\n\r");
@@ -549,7 +763,7 @@ index 8e3d175..d384dda 100644
  }
  #endif
  /**
-@@ -842,7 +1271,18 @@ static void Ext_Mem_Config(void)
+@@ -842,7 +1448,18 @@ static void Ext_Mem_Config(void)
      __BKPT(0);
    }
    BSP_XSPI_NOR_EnableMemoryMappedMode(0);
