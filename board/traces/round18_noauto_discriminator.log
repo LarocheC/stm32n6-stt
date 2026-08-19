@@ -1,0 +1,79 @@
+
+[catch 12:25:07] armed
+
+[catch 12:25:07] port open, reading
+
+[catch 12:26:07] read ended: OSError
+
+[catch 12:26:07] open failed (SerialException); re-attaching
+
+[catch 12:26:12] open failed (SerialException); re-attaching
+
+[catch 12:26:15] open failed (SerialException); re-attaching
+
+[catch 12:26:20] port open, reading
+U123456789[0m
+[0m[0m------------------------------------------------------------
+[0m[0m        System configuration (Bare Metal)
+[0m[0m------------------------------------------------------------
+[0m
+Log Level: Info
+
+Compiled with GCC 14.3.1
+STM32 device configuration...
+ Device       : DevID:0x0486 (STM32N6) RevID:0x0000
+ Core Arch.   : M55 - FPU  used
+ HAL version  : 0x01010000
+ SYSCLK clock : 600 MHz
+ HCLK clock   : 400 MHz
+ CACHE conf.  : $I/$D=(True,True)
+[0m
+NPU Runtime configuration...
+[0m[0m NPU clock    : 800 MHz
+[0m[0m NIC clock    : 800 MHz
+DE[0m[0m
+# gate4: canned features, mic bypassed
+L
+ST.AI RT
+---------------------------------------------------------------
+ tools version   : v4.0.1
+ network rt lib  : v1.1.3-71120109
+   compiled with : GCC 14.3.1
+
+[0m[0;35mAI_DPU: Activation are already allocated 
+[0m[0m
+MK[0m[0m
+# ---- run 0 ----
+[0m[0m# in=0x34350000 out=0x34350000 scale=8.297212 off=0
+[0m[0m# fed 64000 B of 64000 B input
+[0m[0m# invoking...
+
+I
+E000t000000
+E064t000037
+E128t000059
+E192t000081
+E256t000094
+E320t000108
+<330f019i548o001>00158071
+<331f019i128o016>00048031
+<332f019i008o128>00041851
+<333f019i128o002>00051253
+<334f019i264o001>00071046
+<335f019i081o512>00157987
+<336f019i004o064>00048026
+<337f019i001o512>00041876
+<338f019i001o032>00051259
+<339f019i005o064>00071138
+<340f019i164o002>00158542
+<341f019i128o016>00047815
+<342f019i001o064>00048792
+<343f019i033o004>00021859
+<344f019i516o008>00046591
+<345f019i600o002>01274665
+<346f019i681o326>00178933
+<347f019i460o048>00249361
+<348f019i129o256>00081560
+<349f019i228o018>00177744
+<350f019i016o128>00048024
+<351f019i834o049

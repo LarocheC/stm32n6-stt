@@ -1630,3 +1630,84 @@ it against the epoch-block table.
 just rebuilt, and the two `-w` commands above when flashing a staged image.
 Weights go at **`0x70400000`**, which is also the app-slot end to pass as the
 script's second argument.
+
+---
+
+# Round 18b — the board answers: it is the activation unit, not the submask split
+
+The discriminating build ran. `artifacts/images/noauto_discriminator/`, ST's
+stock option string, 618 epochs, 0 SW, 0 hybrid, booted from flash. Full trace:
+[`board/traces/round18_noauto_discriminator.log`](traces/round18_noauto_discriminator.log).
+
+```
+<345f019i600o002>01274665
+<346f019i681o326>00178933      <- Conv2D_850_subm_0/1/2   COMPLETES
+<347f019i460o048>00249361
+<348f019i129o256>00081560
+<349f019i228o018>00177744
+<350f019i016o128>00048024
+<351f019i834o049               <- Conv2D_859_subm_0/1/2   OPENS AND NEVER CLOSES
+```
+
+Both predicted masks landed exactly where Round 18 said they would — `i681 o326`
+at trace 346 and `i834 o049` at trace 351 — which independently confirms the
+epoch-numbering correction, since those masks were derived from the epoch-block
+table and not from the board.
+
+**The three-submask packing is refuted.** `Conv2D_850` is a `k=7`, `group=256`
+depthwise convolution split into three submasks across three convolutional
+accelerators in a single epoch, and it **completes in 178,933 cycles**. That was
+this round's leading hypothesis and the board killed it.
+
+## What is left, with a control on both sides
+
+The two epochs differ in exactly one thing:
+
+| `epoch_num` | trace | conv submasks | activation unit | result |
+|---:|---:|---:|---|---|
+| 348 | 346 | 3 | none (`Identity`) | **completes**, 178,933 cycles |
+| 353 | 351 | 3 | **`Relu_857`**, `ACTIV_ACC_V2` | **stalls forever** |
+
+Counting over the whole graph: **36 epochs program three or more convolutional
+accelerators *and* an activation accelerator, and not one of them lies below the
+stall.** The only three-submask epoch without an activation unit is 348 — and it
+runs. So the shape of the defect is
+
+> three convolutional accelerators driven from one depthwise convolution in an
+> epoch that also programs an activation accelerator
+
+with one positive case and one negative control, both measured on silicon.
+
+## The affected set is perfectly regular
+
+The 36 are exactly `/encoder/encoder.{13..21}/mconv.{5,10,15,20}/conv/Conv` —
+nine encoder blocks by four depthwise convolutions each, every one `group=256,
+k=[7,1]`. Blocks 0-12 are unaffected because their temporal kernels are shorter
+and split into fewer than three submasks; `mconv.0` of each block escapes because
+its epoch carries no activation, which is precisely the `epoch_num 348` control.
+
+**This kills the escape hatch as built.** `artifacts/images/float859_escape/`
+forces only `Conv2D_859` to software, so it would clear `epoch_num 353` and stall
+at 358, the next `mconv.10` site. A per-node software fallback would need 36
+sites and 144 software epochs; at 358,400 MACs each that is 12.9 MMAC of float
+convolution on the M55 plus dequantise/requantise of 51,200 elements per site,
+which is not obviously affordable against a ~115 ms budget and has not been
+measured.
+
+## Where this leaves blocker 2
+
+Both blockers are now depthwise convolutions with a *specific emitted hardware
+configuration*, not with the operator's arithmetic:
+
+| | blocker 1 | blocker 2 |
+|---|---|---|
+| operator | `Conv2D_70`, `group=256 k=[3,1]` | `Conv2D_859` and 35 siblings, `group=256 k=[7,1]` |
+| trigger | stride 2 | 3 conv accelerators + an activation accelerator in one epoch |
+| sites | 3 | **36** |
+| fix | move the stride to the pointwise partner — bit-exact, free | **open** |
+
+The next thing to try is whatever prevents the activation from being scheduled
+into the same epoch as a three-way-split depthwise convolution, because
+`epoch_num 348` proves that configuration executes. That is a scheduling
+property, so an option sweep is the cheap first move; a graph rewrite that splits
+the depthwise convolution across channels is the fallback.
