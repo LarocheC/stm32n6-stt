@@ -255,8 +255,12 @@ the third was **not real**:
 3. ~~**Gain staging is unsolved, and it fails silently.**~~ **The premise was
    wrong by about 50 dB.** The −54 dBFS figure below is not what this board's
    microphone delivers. At the stock `MDF_GAIN(16000) = 2` it produced a
-   **−3.8 dBFS peak with zero clipped samples** and 0 % guard occupancy. There
-   was no deficit to correct. Measured WER against capture level, on canned
+   **−3.8 dBFS peak with zero clipped samples**. There *is* a gain-staging
+   problem, but it has **the opposite sign**: at that same gain a louder talker
+   clipped 1067 of 128,000 samples and scored **62.5 % WER**, the worst figure
+   measured anywhere in this project. The AGC exists to bring the level *down*
+   and hold it there against a talker who moves
+   (`firmware/FRONTEND.md` §13). Measured WER against capture level, on canned
    material peak-scaled: **flat at 6–8 % from −3.8 down to −30 dBFS**, 9.7 % at
    −40, 18.1 % at −54. The mechanism at the bottom is the **log guard**, not the
    int16 truncation — truncating to int16 costs ±1.4 points with no trend at any

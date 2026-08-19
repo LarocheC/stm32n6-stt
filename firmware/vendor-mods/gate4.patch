@@ -73,7 +73,7 @@ index d4ebc45..8162f80 100644
  LD_FLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS)
  LD_FLAGS += -Wl,--cref -Wl,--gc-sections
 diff --git a/Projects/GS/Src/audio_bm.c b/Projects/GS/Src/audio_bm.c
-index 8e3d175..fc58d82 100644
+index 8e3d175..bebde50 100644
 --- a/Projects/GS/Src/audio_bm.c
 +++ b/Projects/GS/Src/audio_bm.c
 @@ -34,6 +34,24 @@
@@ -340,7 +340,7 @@ index 8e3d175..fc58d82 100644
  
    /* by default processing is active */
    AudioProcIsOn = true;
-@@ -138,9 +338,792 @@ void init_bm(void)
+@@ -138,9 +338,838 @@ void init_bm(void)
    * @param  None
    * @retval None
    */
@@ -868,11 +868,32 @@ index 8e3d175..fc58d82 100644
 + *      moving both toward an ABSOLUTE floor at 2^-24.  It is a diagnostic and a
 + *      refusal criterion, not a setpoint.  Kept as both, printed every utterance.
 + *
-+ *      So: target the peak at the corpus median of -7.6 dBFS.  Measured WER
-+ *      against peak level is flat at 6-8 % from -3.8 down to -30 dBFS, 9.7 % at
-+ *      -40 and 18.1 % at -54, so the target sits in the middle of the plateau
-+ *      with 22 dB of margin before the curve turns -- and, reassuringly,
-+ *      CITRINET_FE_GUARD_MAX_FRAC first fires at -30 dBFS, exactly where it does.
++ *      So: target the peak, on a plateau.  Measured WER against peak level is
++ *      flat at 6-8 % from -3.8 down to -30 dBFS, 9.7 % at -40 and 18.1 % at -54,
++ *      and CITRINET_FE_GUARD_MAX_FRAC first fires at -30 dBFS, exactly where the
++ *      curve turns (firmware/test/level_sweep.py).
++ *
++ *      THE TARGET IS -15 dBFS, NOT THE CORPUS MEDIAN OF -7.6, AND CLIPPING GETS A
++ *      FAST ATTACK.  The costs either side of the plateau are wildly asymmetric.
++ *      Round 24 caught the stock gain of 2 clipping 1067 of 128,000 samples --
++ *      0.83 % -- on a louder talker, and that utterance scored 62.5 % WER, the
++ *      worst measured anywhere in this project.  Losing 9 dB of level, by
++ *      contrast, costs nothing measurable: the plateau is 26 dB wide.  So spend
++ *      level to buy headroom, and treat clipping as a different kind of event
++ *      rather than a large error:
++ *
++ *        - any clipped sample at all -> drop the maximum, -3 steps, immediately.
++ *          A clipped capture reads peak 0.0 dBFS, which against a -15 dBFS target
++ *          is only 5 steps; against the -7.6 target it was 2, and round 24 took
++ *          two utterances to escape.  Note 39 clipped samples was HARMLESS there
++ *          (0.0 % WER), so this triggers on existence, not severity -- headroom
++ *          is cheap and the failure is not.
++ *        - otherwise the ordinary deadbanded peak correction, at most 3 steps.
++ *
++ *      Peak is a noisy statistic -- round 24 saw the same sentence 12 s apart at
++ *      -5.0 and -12.2 dBFS -- so the deadband matters more than the setpoint.
++ *      The per-utterance magnitude histogram printed below is the raw material
++ *      for something better (an active-speech-level percentile) if it is needed.
 + *   2. citrinet_fe_peak_normalize(), digital, applied AFTER it.  This is the
 + *      knob FEASIBILITY says is the weak one -- so run it as the CONTROL, not
 + *      as the fix, and print both transcripts.  If "raw" and "norm" agree, the
@@ -886,7 +907,7 @@ index 8e3d175..fc58d82 100644
 + * citrinet_fe_run() returns CITRINET_FE_E_GUARD (-4) past 50 %.  The NPU runs
 + * anyway -- refusing would hide exactly the degradation we are here to see.
 + */
-+#define G5M_TARGET_DBFS_X10   (-76)    /* corpus median PEAK, wav_ref.json      */
++#define G5M_TARGET_DBFS_X10   (-150)   /* see the note on headroom below         */
 +#define G5M_STEP_DB_X10       30       /* one MDF gain step, ~3 dB              */
 +#define G5M_GAIN_MIN          (-16)
 +#define G5M_GAIN_MAX          24
@@ -1053,6 +1074,27 @@ index 8e3d175..fc58d82 100644
 +      acc += (double)v * (double)v;
 +    }
 +    const uint32_t rms = (uint32_t)sqrt(acc / (double)CITRINET_FE_NSAMPLES);
++
++    /* Magnitude histogram, one bin per octave: h[0] counts exact zeros, h[k]
++     * counts 2^(k-1) <= |x| < 2^k.  Two questions it answers that peak and RMS
++     * cannot.  Where is the noise floor -- if the low bins are empty the capture
++     * is quantisation-limited, and if they are populated it is self-dithered, so
++     * this is the direct test for the int16 quantisation noise that
++     * firmware/test/level_sweep.py could only rule out on canned material.  And
++     * what is the active speech level -- a high percentile read off the
++     * cumulative counts is robust to the single transients that make `peak` jump
++     * 7 dB between identical utterances. */
++    uint32_t hist[17];
++    for (uint32_t k = 0; k < 17u; k++) hist[k] = 0u;
++    for (uint32_t i = 0; i < (uint32_t)CITRINET_FE_NSAMPLES; i++)
++    {
++      const int32_t  v = (int32_t)pcm[i];
++      const uint32_t a = (uint32_t)(v < 0 ? -v : v);
++      hist[a == 0u ? 0u : (32u - __CLZ(a))]++;
++    }
++    my_printf("# H %lu", (unsigned long)utt);
++    for (uint32_t k = 0; k < 17u; k++) my_printf(" %lu", (unsigned long)hist[k]);
++    my_printf("\r\n");
 +    my_printf("# L %lu peak %lu (", (unsigned long)utt, (unsigned long)peak);
 +    g5m_print_dbfs(g5m_dbfs_x10(peak));
 +    my_printf(" dBFS) rms %lu (", (unsigned long)rms);
@@ -1081,8 +1123,11 @@ index 8e3d175..fc58d82 100644
 +    else if (peak > 0u)
 +    {
 +      /* peak below target => too quiet => raise gain.  Integer division is the
-+       * deadband: anything inside +-3 dB, one step, leaves the gain alone. */
-+      int steps = (G5M_TARGET_DBFS_X10 - g5m_dbfs_x10(peak)) / G5M_STEP_DB_X10;
++       * deadband: anything inside +-3 dB, one step, leaves the gain alone.
++       * Clipping bypasses all of it -- see the header note. */
++      int steps = clip > 0u
++                ? -G5M_MAX_STEP
++                : (G5M_TARGET_DBFS_X10 - g5m_dbfs_x10(peak)) / G5M_STEP_DB_X10;
 +      if (steps >  G5M_MAX_STEP) steps =  G5M_MAX_STEP;
 +      if (steps < -G5M_MAX_STEP) steps = -G5M_MAX_STEP;
 +      int ng = gain + steps;
@@ -1092,8 +1137,9 @@ index 8e3d175..fc58d82 100644
 +      g5m_print_dbfs(g5m_dbfs_x10(peak));
 +      my_printf(" target ");
 +      g5m_print_dbfs(G5M_TARGET_DBFS_X10);
-+      my_printf(" dBFS  guard %lu%% (diagnostic)  gain %d -> %d\r\n",
-+                (unsigned long)raw.guard_pct, gain, ng);
++      my_printf(" dBFS  guard %lu%% (diagnostic)%s  gain %d -> %d\r\n",
++                (unsigned long)raw.guard_pct,
++                clip > 0u ? "  CLIPPED: fast attack" : "", gain, ng);
 +      gain = ng;
 +    }
 +
@@ -1133,7 +1179,7 @@ index 8e3d175..fc58d82 100644
    time_stats_init();
  
    initAudioProc(&audio_proc_ctx);
-@@ -172,6 +1155,7 @@ void exec_bm(void)
+@@ -172,6 +1201,7 @@ void exec_bm(void)
  
    test_dump();
    my_printf("\n\r# End Processing\n\r");
@@ -1141,7 +1187,7 @@ index 8e3d175..fc58d82 100644
  }
  #endif
  /**
-@@ -554,7 +1538,14 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
+@@ -554,7 +1584,14 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
  {
    if (Instance == 1U)
    {
@@ -1156,7 +1202,7 @@ index 8e3d175..fc58d82 100644
    }
  }
  
-@@ -567,7 +1558,11 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
+@@ -567,7 +1604,11 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
  {
    if (Instance == 1U)
    {
@@ -1168,7 +1214,7 @@ index 8e3d175..fc58d82 100644
    }
  }
  #if (CTRL_X_CUBE_AI_AUDIO_OUT==COM_TYPE_HEADSET)
-@@ -842,7 +1837,18 @@ static void Ext_Mem_Config(void)
+@@ -842,7 +1883,18 @@ static void Ext_Mem_Config(void)
      __BKPT(0);
    }
    BSP_XSPI_NOR_EnableMemoryMappedMode(0);

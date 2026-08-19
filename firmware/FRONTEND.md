@@ -813,3 +813,74 @@ what it was before §10 promoted it to a setpoint.
 recorded that the hypothesis failed to reproduce; this is the reason it failed.
 The eleven-utterance correlation in §10 was eleven different physical utterances
 at different speaking levels, confounded from the start.
+
+
+---
+
+## 13. The gain problem is real, and it is clipping — 2026-08-19
+
+`board/traces/round24_mic_peakagc.log`. Peak-targeting AGC at −7.6 dBFS, starting
+from the BSP default gain of 2.
+
+```
+utt  gain  peak dB  clip   guard  rc    WER   text
+u0      2      0.0  1067      0%   0  62.5%  "chkan wased on the smooth plananks"
+u1      0      0.0    39      2%   0   0.0%  "the birch canoe slid on the smooth planks"
+u2     -2     -5.0     0     13%   0  37.5%  "the birge canoe stayed on the smooth plananks"
+u3     -2    -12.2     0     10%   0   0.0%  "the birch canoe slid on the smooth planks"
+```
+
+**Two verbatim transcriptions.** And a correction to §10 and §12.
+
+### "The stock gain is already right" was wrong
+
+§10 concluded that from a single utterance: −3.8 dBFS peak, 0 clipped. At the
+same gain 2, with a louder or closer talker, this run clipped **1067 of 128,000
+samples — 0.83 %** — and scored **62.5 % WER, the worst measured anywhere in this
+project**.
+
+So the gain-staging risk `docs/FEASIBILITY.md` §2(d) named is real. It is simply
+**the opposite sign**: the danger is clipping, not starvation. Three runs now
+agree on the direction — the microphone is hot, the AGC exists to bring it *down*
+and to keep it down against a talker who moves.
+
+### The controller had the wrong dynamics, and the reason is instructive
+
+`2 → 0 → −2 → −2 → −1` is the correct direction, but it took **two utterances to
+escape the clipping**. A clipped capture reads peak `0.0 dBFS`, so against a
+−7.6 dBFS target the error is 7.6 dB — two steps. The error signal saturates
+exactly when the failure is worst.
+
+The costs either side of the plateau are wildly asymmetric:
+
+| | measured |
+|---|---|
+| 0.83 % of samples clipped | **62.5 % WER** |
+| 0.03 % clipped (39 samples) | **0.0 % WER** |
+| 9 dB of level given away, anywhere on the plateau | nothing measurable (§12: flat 6–8 % over 26 dB) |
+
+So the controller is now asymmetric too:
+
+- **Any clipped sample at all → drop the maximum, −3 steps, immediately.** It
+  triggers on existence rather than severity, because 39 clipped samples was
+  harmless and headroom is nearly free.
+- Otherwise the ordinary deadbanded peak correction.
+- **Target moved from −7.6 dBFS to −15 dBFS.** The corpus median peak is −7.6,
+  but the plateau is 26 dB wide and the differences across it are within the
+  ±1.4-point noise of §12's sweep. Spending 7 dB of level to buy 7 dB of clipping
+  headroom costs nothing and prevents the failure above.
+
+### A magnitude histogram, because peak is a bad statistic
+
+The same sentence 12 s apart read −5.0 and −12.2 dBFS peak. One transient sets
+the peak, so the AGC hunts.
+
+Each utterance now prints a 17-bin octave histogram of |x| — `h[0]` exact zeros,
+`h[k]` for 2^(k−1) ≤ |x| < 2^k. It answers two things peak and RMS cannot:
+
+- **Where the noise floor sits.** If the low bins are empty the capture is
+  quantisation-limited; if they are populated it is self-dithered. §12 ruled out
+  int16 quantisation noise on *canned* material by simulation — this is the
+  direct test on the real capture.
+- **What the active speech level is.** A high percentile read off the cumulative
+  counts is robust to the transients that make `peak` jump 7 dB.
