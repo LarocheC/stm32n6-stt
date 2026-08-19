@@ -1681,8 +1681,10 @@ with one positive case and one negative control, both measured on silicon.
 ## The affected set is perfectly regular
 
 The 36 are exactly `/encoder/encoder.{13..21}/mconv.{5,10,15,20}/conv/Conv` —
-nine encoder blocks by four depthwise convolutions each, every one `group=256,
-k=[7,1]`. Blocks 0-12 are unaffected because their temporal kernels are shorter
+nine encoder blocks by four depthwise convolutions each, all `group=256`. They
+are **not** all `k=[7,1]`: 20 are (`encoder.13..17`) and 16 are `k=[9,1]`
+(`encoder.18..21`). What they share is a temporal kernel long enough to split
+into three submasks, with a `Relu` chained into it. Blocks 0-12 are unaffected because their temporal kernels are shorter
 and split into fewer than three submasks; `mconv.0` of each block escapes because
 its epoch carries no activation, which is precisely the `epoch_num 348` control.
 
@@ -1865,3 +1867,92 @@ at both optimisation levels.)
 The remaining work is not correctness, it is cost. `--force-all-in-out-to-mem`
 is global; the graph only needs the 36 `Relu → depthwise` chains broken. A
 targeted fix should recover most of the gap between 618 and 1064 epochs.
+
+---
+
+# Round 19 — the root cause, and a graph rewrite that beats the workaround
+
+## Why the compiler chains the Relu forward
+
+atonn canonicalises every convolution to 2-D. The source graph is 1-D, so atonn
+wraps each convolution in `Reshape` 3D↔4D pairs. At the 36 defective sites the
+`Relu` is a **3-D** operator sandwiched between two **4-D** convolutions:
+
+```
+Conv2D_853(4D) -> Q/DQ -> Reshape_856(4D->3D) -> Relu_857(3D) -> Reshape_858(3D->4D) -> Conv2D_859(4D)
+```
+
+`Reshape_856` becomes an epoch of its own — a real `STRENG -> STRENG` copy — which
+separates the `Relu` from its **producer**. Having nothing to chain backwards to,
+the compiler chains it **forwards into its consumer**: `ACTIV 1 -> CONVACC 0/1/2
+port 0`, the stall (`g800_noauto/network.c:84583`).
+
+Where no `Reshape` separates a convolution from its `Relu`, the compiler chains the
+other way — `CONVACC -> ARITH(bias) -> ACTIV -> STRENG` — which lands the `Relu`'s
+result **in memory**. Twenty-six such epochs execute below the stall in the build
+the board ran. That is the whole difference.
+
+## The fix: keep the Relu on the 4-D tensor
+
+```
+DQ -> Reshape([0,0,-1,1]) -> Relu -> Q -> DQ -> Reshape([0,0,-1]) -> Conv
+```
+
+atonn's own `fuse_consecutive_reshapes` / `eliminate_nop_reshape` cancel its
+inserted pair against ours, the `Relu` ends up adjacent to its producing
+convolution, and the depthwise convolution reads from a streaming engine — exactly
+the `epoch_num 348` configuration the board completed in 178,933 cycles. `Reshape`
+does not change values, so the rewrite is exact by construction.
+
+`model/break_relu_chain.py`, discovering its sites rather than hardcoding them.
+
+## It beats `--force-all-in-out-to-mem` on every axis
+
+| | baseline (stalls) | `--force-all-in-out-to-mem` (flashed, works) | **rewrite, 84 sites** |
+|---|---:|---:|---:|
+| epochs | 618 | 1064 | **448** |
+| SW / hybrid | 0 / 0 | 0 / 0 | **0 / 0** |
+| `ACTIV→CONVACC` epochs | 36 | 0 | **0** |
+| cpuRAM2 | 500 kB | 800 kB | **300 kB** |
+| npuRAM6 | 425 kB | 425 kB | 425 kB |
+| PSRAM | none | none | **none** |
+| estimated cycles | 92,450,794 | 119,283,496 | **76,000,592** |
+| latency | — | **194.0 ms measured** | ~127 ms predicted |
+
+−58 % epochs, −36 % estimated cycles, −62 % cpuRAM2 against the workaround — and
+it beats the *stalling* baseline too, because the rewrite deletes 132 of the 169
+pure copy epochs (15,760,000 → 3,568,000 cycles of `Reshape`/`Identity`).
+
+Verified `max|diff| = 0` over 3,075,000 output elements, 30 random inputs. The
+check is sensitive: flipping one LSB of one int8 weight makes it report
+`max|diff| = 3.45` with 83 % of elements differing. Total MACs are unchanged
+across every build (2,235,241,315), so the epoch reduction is not work going
+missing. The weight blob is byte-identical (`md5 c81d84a7a9cbff549bfa9fa4df8923ff`)
+— **only the application image needs reflashing.**
+
+## The fan-out question, answered as a side effect
+
+Round 18b could not separate "any `ACTIV → CONVACC` link is broken" from "an
+`ACTIV` source driving *three* destinations is broken", because all 36 sites had
+fan-out exactly 3. The rewrite settles it from the other direction: ACTIV-source
+fan-out goes `{1:117, 3:36}` → `{1:153}`. Every one of the 36 three-way links
+becomes a one-way link **to a streaming engine**, and none to a CONVACC. Purpose-built
+reproducers with fan-out 1, 2 and 4 are in `artifacts/onnx/repro2/`.
+
+## Negative results, so they are not retried
+
+| tried | outcome |
+|---|---|
+| `--Oconv-split-cw` / `-kw` / `-stripe`, `--Ono-clone-dma` | all leave 36 |
+| `--Oconv-split-stripe-full` | compile aborts, `E103` stripe validation |
+| `--d-onnx-temps` on the 36 Relu edges — the only *targeted* materialisation lever in the option set | silently ignored (epoch table byte-identical to baseline), then crashes the wrapper |
+| `--Oauto` | 192 combinations, ~4.4 h, and contains no chaining lever — every axis in it was measured to leave all 36 |
+| rewriting `/encoder/encoder.22/mconv.0`, whose `Relu` is produced by the residual `Add` rather than a `Conv` | **creates** a defect the baseline did not have. The script now skips any site whose `Relu` producer is not a `Conv` |
+| `--force-all-in-out-to-mem` without `--Oauto-sched` | 1052 epochs but *more* cycles than with it |
+
+## A minimal reproducer for ST
+
+`board/REPRO-blocker2.md`, with `artifacts/onnx/repro2/`: a **9-node, 2,453-byte**
+ONNX that compiles to three epochs and reproduces `CONVACC 0/1/2 port 0 <- ACTIV 0
+port 0`, beside a 6-node control that produces `CONVACC 0/1/2 port 0 <- STRENG 7
+port 0` and differs in nothing else. That is the bug report.
