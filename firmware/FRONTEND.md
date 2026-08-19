@@ -884,3 +884,68 @@ Each utterance now prints a 17-bin octave histogram of |x| — `h[0]` exact zero
   direct test on the real capture.
 - **What the active speech level is.** A high percentile read off the cumulative
   counts is robust to the transients that make `peak` jump 7 dB.
+
+
+---
+
+## 14. SNR is the variable; level is not — 2026-08-19
+
+`firmware/test/noise_sweep.py`. Six canned utterances, a pink noise floor added at
+a fixed SNR, then the whole sum peak-scaled the way the MDF gain scales a live
+capture — signal and floor together.
+
+### Level, with a noise floor present
+
+| peak dBFS | clean | SNR 30 dB | SNR 20 dB |
+|---:|---:|---:|---:|
+| −3.8 | 7.48 % | 9.35 % | 8.41 % |
+| −10.0 | 8.41 % | 7.48 % | 7.48 % |
+| −15.0 | 7.48 % | 10.28 % | 6.54 % |
+| −20.0 | 8.41 % | 9.35 % | 6.54 % |
+| −25.0 | 7.48 % | 6.54 % | 6.54 % |
+| −30.0 | 8.41 % | 7.48 % | 8.41 % |
+| −35.0 | 12.15 % | 10.28 % | 7.48 % |
+
+**Flat.** §12 established this on clean audio; the obvious objection was that
+clean audio has no floor for the 2⁻²⁴ log guard to gate, so lowering the level
+could not show its benefit. It has none. Adding a floor changes nothing about the
+level dependence, which is what a gain knob that scales signal and noise together
+should do.
+
+That retires three successive hypotheses of mine — guard occupancy as an AGC
+setpoint (§10), peak level at the corpus median (§12), and peak level with
+headroom (§13). Only §13's **clipping** rule survives, and it survives because
+clipping is not a level effect: it is a nonlinearity, and it cost 62.5 % WER.
+
+### SNR, at a fixed level
+
+| SNR dB | WER |
+|---:|---:|
+| 20 | 6.54 % |
+| 15 | 9.35 % |
+| 10 | 15.89 % |
+| 6 | 17.76 % |
+| 3 | 22.43 % |
+| 1 | 39.25 % |
+| 0 | 44.86 % |
+
+**This is the variable.** Graceful to about 10 dB, unusable below 3. Every earlier
+discussion in §§10–13 about level and gain was really a discussion about SNR
+conducted without measuring it.
+
+The practical consequence for the product: **no gain setting can rescue a
+low-SNR capture**, so the microphone path's job is to deliver SNR — distance to
+the talker, and the room — and the AGC's only job is to avoid clipping. The
+histogram added in §13 is the on-device instrument for this: a noise-floor
+percentile (p20) and the peak together estimate SNR per utterance, which the
+board can print and refuse on, the way it already refuses on guard occupancy.
+
+### Round 25 is a null run
+
+`board/traces/round25_mic_null.log` is kept for the histograms and for the
+replay pass, which matched the host on 11 of 16 as in every other boot. Its live
+utterances are an empty room — the operator could not speak — so its 87–100 %
+WER is not evidence about anything, and no conclusion here rests on it. Working
+the histograms backwards gives ~1 dB SNR for u2 and ~6 dB for u5, which the table
+above says is exactly where the model is expected to produce the word salad it
+produced.
