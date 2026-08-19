@@ -1105,3 +1105,65 @@ DMA-scanning the application's own `.text` as pixels; and the init ordering abov
 
 Gates 0-7 are closed. 7b, the button, is the remaining item and the stock app has
 already done its plumbing.
+
+
+---
+
+## 17. The meter and the spectrogram — 2026-08-19
+
+`board/traces/round29_lcd_meter_spectrogram.log`.
+
+Two additions to the panel, both paid for by time the M55 was already wasting.
+
+**The live meter** runs in what was `while (g5m_arm) { __NOP(); }` — eight seconds
+of idle CPU. Peak over each 100 ms of newly arrived samples, read from `g5m_w`
+without touching the interrupt path, on a −60…0 dBFS scale with a tick at the
+−15 dBFS target and the last 3 dB in red.
+
+Every live-audio failure in §§10–15 was a level or presence problem that stayed
+invisible until someone read a UART log afterwards: a null run where nobody
+spoke, a capture at 1 dB SNR, 1067 clipped samples, 21 dB given away by a
+mis-targeted AGC. The meter makes all of them visible while they happen. Its
+first run did exactly that — the operator saw the bar in the red and said so
+before any log was parsed.
+
+**The spectrogram** is `citrinet_fe_logmel()` rendered on an **absolute** scale.
+That accessor returns pass-1 values, `ln(mel + 2⁻²⁴)`, *before* per-bin
+normalisation, and `citrinet_fe_finish()` does not overwrite the scratch — so the
+guard floor at `ln(2⁻²⁴) = −16.64` renders as black rather than being normalised
+away. 800 px is one per 10 ms frame, exactly the window; 80 bins at 3 px, bin 0
+at the bottom. Written straight into the framebuffer, flushing only the rows
+touched.
+
+### It reproduces a measurement that previously cost a day
+
+The colour ramp is linear in log-mel from −16.64 to +1, so the picture is
+quantitative. On the first live frame: the noise floor renders blue at k ≈ 64–90,
+i.e. log-mel ≈ −12 to −10.5, and speech formants reach yellow-white at ≥ −3.4.
+That is ~8 nats between them, or **~35 dB SNR** — against the **33.6 dB** §15
+measured by base64-ing a waveform up a 14400-baud line and analysing it on a
+workstation.
+
+It also settles §12's question by eye. The silent third of the window is **blue,
+not black**: the room's floor sits ~19 dB above the log guard, which is why
+`guard 0%`, and why a guard-occupancy AGC setpoint was chasing something a live
+capture cannot produce.
+
+### And clipping, on demand
+
+```
+# L 0 peak 32768 (0.0 dBFS) rms 5604 (-15.3 dBFS) clipped 907 gain 2
+# T 0 raw  "barch cano slid on the smooth blanks"
+```
+
+against `"the birch canoe slid on the smooth planks"` — verbatim — from §16, same
+speaker, same sentence, same board, one hour earlier. The failure §13 measured at
+62.5 % WER, reproduced deliberately.
+
+### One nuisance found
+
+The §15 PCM dump was still unconditional, so the first decoding utterance of
+every boot spent ~12 minutes base64-ing itself up the UART before the loop
+continued. It is now behind `-DGATE7_PCM_DUMP`. The real cost is 3.05× the
+payload, not 1.33×, because `my_printf` emits an ANSI reset per call and the dump
+calls it once per four characters.
