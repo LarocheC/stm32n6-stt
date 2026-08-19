@@ -269,11 +269,16 @@ the third was **not real**:
    `CITRINET_FE_GUARD_MAX_FRAC` first fires at −30 dBFS, exactly where the curve
    turns.
 
-**Live WER is 20.8-25.0 %** over six utterances of one sentence, one speaker, one
-room — against **4.3 %** for the same image on canned waveforms in the same boot.
-That gap is far-field acoustics plus a 2.5 s sentence in an 8 s window, not the
-port. See [`firmware/FRONTEND.md`](firmware/FRONTEND.md) §§10-11 for the numbers
-and for two hypotheses of mine the board refuted.
+**The microphone path costs nothing measurable.** Two LibriSpeech utterances
+played at the board through a laptop speaker score **3.2 % WER** through
+mic → MDF → M55 front end → NPU, against **4.3 %** for the same model fed
+host-computed features from flash — one of them transcribed verbatim. Live human
+speech pools at **30.3 %**, and that gap is the talker being outside
+Citrinet-256's LibriSpeech training distribution, not the port: level, int16
+quantisation, SNR (33.6 dB measured), reverberation (RT60 0.09 s) and the front
+end (6 int8 values of 960,000) were each eliminated by measurement first. See
+[`firmware/FRONTEND.md`](firmware/FRONTEND.md) §§9-15 — and §§10-14 for four
+hypotheses of mine the board refuted.
 
 ### The original text, kept because the reasoning is still worth reading
 

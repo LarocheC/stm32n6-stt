@@ -73,7 +73,7 @@ index d4ebc45..8162f80 100644
  LD_FLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS)
  LD_FLAGS += -Wl,--cref -Wl,--gc-sections
 diff --git a/Projects/GS/Src/audio_bm.c b/Projects/GS/Src/audio_bm.c
-index 8e3d175..bebde50 100644
+index 8e3d175..719e05f 100644
 --- a/Projects/GS/Src/audio_bm.c
 +++ b/Projects/GS/Src/audio_bm.c
 @@ -34,6 +34,24 @@
@@ -340,7 +340,7 @@ index 8e3d175..bebde50 100644
  
    /* by default processing is active */
    AudioProcIsOn = true;
-@@ -138,9 +338,838 @@ void init_bm(void)
+@@ -138,9 +338,892 @@ void init_bm(void)
    * @param  None
    * @retval None
    */
@@ -917,6 +917,53 @@ index 8e3d175..bebde50 100644
 +                                        * measured -3.8 dBFS peak and 0 clipped  */
 +#define G5M_SETTLE_MS         400u     /* dropped: MDF high-pass + gain change  */
 +
++/* Dump the captured waveform over the UART, once, as base64.
++ *
++ * Every explanation for the gap between 4.3 % WER on canned waveforms and ~30 %
++ * on this microphone has now been eliminated by measurement -- level, int16
++ * quantisation, additive noise at the SNR the board reports, and the front end
++ * itself -- which leaves the acoustic channel, and the cheapest way to judge an
++ * acoustic channel is to LISTEN to it.
++ *
++ * It has to come out of the firmware: STM32_Programmer_CLI cannot attach over
++ * SWD while the application runs (board/GATE3.md -- HOTPLUG does not work on
++ * this part), so the buffer at 0x34200000 is unreachable from the host.
++ *
++ * 128,000 samples of int16 is 256,000 B, which base64 expands to ~341 kB and the
++ * 14400-baud link takes about four minutes to shift. So this fires ONCE, on the
++ * first utterance that actually decodes something, rather than on every window.
++ * The FNV-1a at the end covers the raw bytes, so a dropped character during
++ * those four minutes is detected rather than silently written into a .wav. */
++static int g5m_dumped;
++
++static void g5m_dump_pcm(uint32_t utt, const int16_t *pcm)
++{
++  static const char B64[] =
++      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
++  const uint8_t *p = (const uint8_t *)pcm;
++  const uint32_t n = (uint32_t)CITRINET_FE_NSAMPLES * 2u;
++
++  my_printf("# PCM BEGIN utt %lu samples %lu rate 16000 fmt s16le enc b64\r\n",
++            (unsigned long)utt, (unsigned long)CITRINET_FE_NSAMPLES);
++  uint32_t col = 0;
++  for (uint32_t i = 0; i < n; i += 3u)
++  {
++    const uint32_t b0 = p[i];
++    const uint32_t b1 = (i + 1u < n) ? p[i + 1u] : 0u;
++    const uint32_t b2 = (i + 2u < n) ? p[i + 2u] : 0u;
++    const uint32_t v  = (b0 << 16) | (b1 << 8) | b2;
++    my_printf("%c%c%c%c", B64[(v >> 18) & 63u], B64[(v >> 12) & 63u],
++              (i + 1u < n) ? B64[(v >> 6) & 63u] : '=',
++              (i + 2u < n) ? B64[v & 63u]        : '=');
++    col += 4u;
++    if (col >= 76u) { my_printf("\r\n"); col = 0u; }
++  }
++  if (col) my_printf("\r\n");
++  my_printf("# PCM END utt %lu fnv1a ", (unsigned long)utt);
++  g5_hex8(g5_fnv1a(p, n));
++  my_printf("\r\n");
++}
++
 +static volatile uint32_t g5m_w;        /* samples written, 0..CITRINET_FE_NSAMPLES */
 +static volatile int      g5m_arm;      /* 1 while the callbacks should append   */
 +static char              g5m_text[CITRINET_CTC_TEXT_CAP];
@@ -1110,6 +1157,13 @@ index 8e3d175..bebde50 100644
 +              (unsigned long)utt, (int)lrintf(dg * 100.0f));
 +    (void)g5m_infer(utt, "norm", pcm, 0);
 +
++    /* ---- one waveform to the host, so a human can listen to it ---------- */
++    if (!g5m_dumped && raw.nchars > 0u)
++    {
++      g5m_dump_pcm(utt, pcm);
++      g5m_dumped = 1;
++    }
++
 +    /* ---- AGC for the next utterance ------------------------------------ */
 +    /* Frozen when nothing was said.  Utterances 11-25 of the first silicon run
 +     * were an empty room, and a guard-seeking loop with no speech gate winds the
@@ -1179,7 +1233,7 @@ index 8e3d175..bebde50 100644
    time_stats_init();
  
    initAudioProc(&audio_proc_ctx);
-@@ -172,6 +1201,7 @@ void exec_bm(void)
+@@ -172,6 +1255,7 @@ void exec_bm(void)
  
    test_dump();
    my_printf("\n\r# End Processing\n\r");
@@ -1187,7 +1241,7 @@ index 8e3d175..bebde50 100644
  }
  #endif
  /**
-@@ -554,7 +1584,14 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
+@@ -554,7 +1638,14 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
  {
    if (Instance == 1U)
    {
@@ -1202,7 +1256,7 @@ index 8e3d175..bebde50 100644
    }
  }
  
-@@ -567,7 +1604,11 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
+@@ -567,7 +1658,11 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
  {
    if (Instance == 1U)
    {
@@ -1214,7 +1268,7 @@ index 8e3d175..bebde50 100644
    }
  }
  #if (CTRL_X_CUBE_AI_AUDIO_OUT==COM_TYPE_HEADSET)
-@@ -842,7 +1883,18 @@ static void Ext_Mem_Config(void)
+@@ -842,7 +1937,18 @@ static void Ext_Mem_Config(void)
      __BKPT(0);
    }
    BSP_XSPI_NOR_EnableMemoryMappedMode(0);

@@ -949,3 +949,90 @@ WER is not evidence about anything, and no conclusion here rests on it. Working
 the histograms backwards gives ~1 dB SNR for u2 and ~6 dB for u5, which the table
 above says is exactly where the model is expected to produce the word salad it
 produced.
+
+
+---
+
+## 15. The microphone path is exonerated; the gap is the talker — 2026-08-19
+
+`board/traces/round27_playback_ab.log`, `artifacts/audio/board_capture_utt0.wav`.
+
+The board had been running at ~30 % WER on live speech against 4.3 % on canned
+waveforms through the identical code path, and §§10-14 eliminated one candidate
+after another for the 26-point gap. The two things that finally settled it were
+both suggested by the operator, and neither was a simulation: **get a recording
+off the board and listen to it**, and **play known-good audio at the microphone**.
+
+### The recording
+
+`g5m_dump_pcm()` base64s one captured window over the UART, once, on the first
+utterance that decodes. It has to come from the firmware — `STM32_Programmer_CLI`
+cannot attach over SWD while the application runs, so `0x34200000` is unreachable
+from the host. 256,000 B, FNV-1a `bf7a20ca` matching on both sides.
+`firmware/tools/decode_pcm.py` verifies the checksum and writes the WAV.
+
+Measured on it, speech frames against noise frames:
+
+| band Hz | speech | noise | SNR dB |
+|---|---:|---:|---:|
+| 0-100 | 106.9 | 75.9 | 30.9 |
+| 100-300 | 107.0 | 71.1 | 35.9 |
+| 300-1000 | 103.7 | 67.0 | 36.7 |
+| 1000-3000 | 96.9 | 64.9 | 31.9 |
+| 3000-6000 | 101.6 | 61.7 | 39.9 |
+| 6000-8000 | 90.3 | 56.5 | 33.8 |
+| **broadband** | | | **33.6** |
+| **300-3400 Hz** | | | **35.5** |
+
+**33.6 dB SNR**, and the steepest sustained decay after a speech offset is
+−693 dB/s, i.e. **RT60 ≈ 0.09 s**. Both kill their hypotheses outright:
+`noise_sweep.py` puts the model's knee at 10 dB SNR, and `reverb_sweep.py`
+(added here) needs RT60 ≈ 0.4-0.5 s to produce 30 % WER — the room is dry and
+the capture is clean. My p20-from-the-histogram SNR estimate of 20-26 dB was
+pessimistic by 10 dB; the histogram is a poor SNR instrument because it cannot
+separate speech frames from noise frames.
+
+The spectrum is oddly tilted — 3-6 kHz carrying more energy than 1-3 kHz — but
+that cannot be the cause either: per-mel-bin mean subtraction in the log domain
+cancels **any** fixed per-bin gain exactly, so a microphone's frequency response
+is invariant by construction (`docs/FEASIBILITY.md` §2(c)).
+
+### The A/B that settled it
+
+Two LibriSpeech utterances the board already transcribes correctly from flash,
+played at it through a **laptop speaker**, across the room:
+
+```
+u22  raw   7.1 %  "... but sobs exclamations and pyers"
+u22  norm  0.0 %  "for some time nothing was heard in that chamber but sobs exclamations and prayers"
+u23  raw  11.8 %  "misterquiilter is the apostle of the middle classes and we are glad to welcome his gospel"
+u23  norm  5.9 %  "mister crter is the apostle of the middle classes and we are glad to welcome his gospel"
+```
+
+| path | WER |
+|---|---:|
+| host-computed features from flash | 4.3 % |
+| **loudspeaker → mic → MDF → M55 front end → NPU** | **3.2 %** (raw 9.7 %) |
+| live human speech, pooled over 26 utterances | 30.3 % |
+
+**The microphone path costs nothing measurable** — and that is through a laptop
+speaker with its own colouration, across a room, into a MEMS microphone. The
+whole chain is exonerated: mic, MDF decimation, the `/256`, int16 truncation, the
+AGC, `citrinet_fe.c` on the M55, cache maintenance, and the NPU.
+
+The remaining 26 points are **the talker being outside Citrinet-256's training
+distribution** — LibriSpeech read audiobook English, close-mic'd. That is a
+property of the model, not of the port, and no firmware change touches it. The
+options, if it matters for the product, are model-side: fine-tune or swap for a
+multi-condition / multi-accent model.
+
+Caveat: n = 2 utterances, 31 reference words. A 14-word utterance transcribed
+verbatim through the air is strong evidence the chain works, but the 3.2 % has a
+wide interval and should not be quoted as a precise figure.
+
+### The clip fast-attack, validated
+
+`# G 0 peak 0.0 target -15.0 dBFS guard 0% CLIPPED: fast attack gain 2 -> -1`.
+One utterance, three steps. §13's rule was designed against round 24's 1067
+clipped samples and 62.5 % WER; here it caught 116 clipped samples and corrected
+in a single window.
