@@ -1711,3 +1711,157 @@ into the same epoch as a three-way-split depthwise convolution, because
 `epoch_num 348` proves that configuration executes. That is a scheduling
 property, so an option sweep is the cheap first move; a graph rewrite that splits
 the depthwise convolution across channels is the fallback.
+
+## The mechanism: an activation accelerator feeding convolutional accelerators
+
+Reading the stream-switch configuration of the two epochs the board decided
+between, in the build it actually ran (`g800_noauto`):
+
+```
+epoch_num 353  -- STALLS
+  ACTIV   1 port 0  <- STRENG 8 port 0     Relu_857 reads memory
+  CONVACC 0 port 0  <- ACTIV  1 port 0     Conv2D_859_subm_2 data in
+  CONVACC 2 port 0  <- ACTIV  1 port 0     Conv2D_859_subm_1 data in
+  CONVACC 1 port 0  <- ACTIV  1 port 0     Conv2D_859_subm_0 data in
+
+epoch_num 348  -- COMPLETES
+  CONVACC 0/1/3 port 0 <- STRENG 0 port 0  Conv2D_850_subm_0/1/2 data in
+```
+
+Both epochs broadcast one stream-switch source port to **three** convolutional
+accelerator input ports. The only difference is what the source is: a streaming
+engine in the epoch that runs, an **activation accelerator** in the epoch that
+hangs.
+
+| property | epochs | completed below the stall |
+|---|---:|---:|
+| max source fan-out ≥ 3 (any source) | 54 | **6** — incl. `epoch_num 348`, the control |
+| max source fan-out ≥ 4 (any source) | 9 | **5** |
+| **any `ACTIV → CONVACC` link** | **36** | **0** |
+
+So three-way fan-out through the stream switch is fine; it is fine at four-way.
+What this part does not do is route an activation accelerator's output straight
+into a convolutional accelerator.
+
+**The obvious refinement cannot be measured on this graph.** All 36 `ACTIV →
+CONVACC` epochs have a fan-out of exactly three — the histogram is
+`{0: 582, 3: 36}` — so nothing distinguishes "an `ACTIV → CONVACC` link is broken"
+from "an `ACTIV` source driving three destinations is broken". Answering that needs
+a graph that exercises a fan-out of one or two, which this one never does.
+
+Note this also explains the shape of the affected set without appealing to kernel
+size. `mconv.0` of each block escapes not because it is different arithmetic but
+because the block's `Relu` is not adjacent to it in the schedule; the four sites
+per block that do stall are exactly those where a `Relu` immediately precedes a
+depthwise convolution and the compiler chains them through the switch rather than
+through a buffer.
+
+---
+
+# Round 18c — the full model executes. `--force-all-in-out-to-mem` clears blocker 2.
+
+```
+# ---- run 1 ----
+# in=0x34350000 out=0x343820d0 scale=8.297212 off=0
+# fed 64000 B of 64000 B input
+# invoking...
+# invoke returned
+# invoke 116393913 cycles = 193.989 ms at 600000000 Hz
+# mismatches 5 / 100
+```
+
+**`AiDPUProcess()` returns.** All 1064 epochs of the full 800-frame Citrinet
+encoder execute on the NPU, booted from flash, repeatably — run 2 came back at
+116,391,956 cycles, 1,957 cycles from run 1. Trace:
+[`board/traces/round18_forcemem_pass.log`](traces/round18_forcemem_pass.log).
+
+This is the fix predicted by the mechanism, and it works by intervention rather
+than by argument: removing every `ACTIV → CONVACC` stream-switch link removes the
+stall.
+
+## The option sweep, and only one option does it
+
+| option | epochs | SW | hybrid | `ACTIV→CONVACC` epochs |
+|---|---:|---:|---:|---:|
+| baseline (ST stock) | 618 | 0 | 0 | 36 |
+| `--Oconv-split-cw` | 640 | 0 | 0 | 36 |
+| `--Oconv-split-kw` | 794 | 3 | 1 | 36 |
+| `--Oconv-split-stripe` | 719 | 0 | 4 | 36 |
+| `--Ono-clone-dma` | 629 | 0 | 0 | 36 |
+| `--Omax-ca-pipe 2` | compile failed | | | |
+| **`--force-all-in-out-to-mem`** | **1064** | **0** | **0** | **0** |
+
+It is documented "only for debugging" and it is a blunt instrument — it forces
+every unit to read and write through memory instead of chaining through the
+stream switch. The cost is smaller than that description suggests:
+
+| | baseline | force-to-mem |
+|---|---:|---:|
+| epochs | 618 | 1064 |
+| SW / hybrid | 0 / 0 | **0 / 0** |
+| cpuRAM2 | 500 kB | 800 kB (78.1 %) |
+| npuRAM6 | 425 kB | 425 kB (94.87 %) |
+| PSRAM | none | **none** |
+| compiler estimate | 92,450,794 cyc | 119,283,496 cyc |
+| **measured** | — | **116,393,913 cyc = 194.0 ms** |
+
+Measured is **2.4 % under** the compiler's estimate for this build, which is the
+first end-to-end confirmation that the scheduler model predicts this graph. For an
+8 s window, 194 ms is ~41x real time.
+
+## Correctness: 5 frames of 100, and the reference is not unique
+
+`# mismatches 5 / 100` fails the gate as written. The differences:
+
+| frame | host | device | host top1/top2 margin | margin rank of 100 | device's rank in host logits |
+|---:|---:|---:|---:|---:|---:|
+| 13 | 58 | 552 | 1.327 | **3** | 6 |
+| 48 | 53 | 29 | 1.327 | **4** | **1** (runner-up) |
+| 55 | 38 | 1024 | 8.759 | 57 | 6 |
+| 56 | 62 | 38 | 9.024 | 59 | 39 |
+| 57 | 1024 | 62 | 3.450 | 12 | **1** (runner-up) |
+
+Frames 55-57 are not five independent errors, they are **one blank-placement
+shift**: the device emits blank at 55 and then reproduces the host's 55 and 56 at
+56 and 57. CTC greedy decoding collapses blanks and repeats, so it **vanishes from
+the transcript**. What survives is two substitutions, at the 3rd and 4th tightest
+margins in the whole utterance:
+
+```
+reference  mister quilter is the apostle of the middle classes and we are glad ...
+host int8  mister crter   is the apostle of the middle classes and we are glad ...
+device     mister quirter is the apostle of the middle classes and were    glad ...
+```
+
+One in each direction — the device is closer to the reference on "quilter"
+(`qui` vs `▁c`) and further on "we are" (`re` vs `▁are`).
+
+**And the host reference is not a fixed point.** `kExpectedTokens` was generated
+with onnxruntime's default graph optimisations enabled. Running the *same graph*
+on the *same input* with `ORT_DISABLE_ALL` instead:
+
+| comparison | frames differing of 100 |
+|---|---:|
+| ORT `ENABLE_ALL` vs ORT `DISABLE_ALL` | **7** |
+| **device vs ORT `ENABLE_ALL`** | **5** |
+
+**The device agrees with the host reference more closely than the host reference
+agrees with itself.** Exact per-frame argmax equality is therefore the wrong
+criterion: it asks silicon to reproduce one arbitrary onnxruntime configuration
+more faithfully than onnxruntime reproduces it under a flag change. (The same run
+re-confirms the fold: `q800_fold.onnx` and `q800_real.onnx` give identical argmax
+at both optimisation levels.)
+
+## Where Gate 4 stands
+
+| | status |
+|---|---|
+| the part executes the graph | **YES** — 1064 epochs, 0 SW, 0 hybrid, all on-chip, no PSRAM, `AiDPUProcess()` returns, repeatable |
+| latency | **194.0 ms** measured, 2.4 % under the compiler's estimate |
+| blocker 1 — stride-2 depthwise | **fixed**, bit-exact and free (Round 12) |
+| blocker 2 — `ACTIV → CONVACC` chaining | **worked around** by `--force-all-in-out-to-mem`; root cause is a silicon or compiler defect and should go upstream |
+| per-frame argmax equality with host ORT | **5 / 100**, against 7 / 100 for ORT against itself |
+
+The remaining work is not correctness, it is cost. `--force-all-in-out-to-mem`
+is global; the graph only needs the 36 `Relu → depthwise` chains broken. A
+targeted fix should recover most of the gap between 618 and 1064 epochs.
