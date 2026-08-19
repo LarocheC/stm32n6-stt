@@ -2004,3 +2004,129 @@ whether 5/100 frames matters, and one utterance cannot answer it: the device's
 **[9.6 %, 47.3 %]** against a host 5.88 %. That interval contains both "as good"
 and "much worse". The next measurement is device-versus-host over a few dozen
 utterances, which needs a harness that holds more than one canned tensor.
+
+---
+
+# Round 20 — 64 utterances: the device is not measurably worse than the laptop
+
+Round 18c argued the correctness criterion was wrong and Round 19's audit called
+that argument over-reaching, on the grounds that one utterance cannot support it:
+4 word errors in 17 words is a Wilson interval of [9.6 %, 47.3 %]. So the
+measurement was made properly.
+
+`firmware/tools/gen_corpus.py` selects utterances, computes their int8 features
+through the same frontend path as the canned tensor, and writes a 4,096,064-byte
+blob flashed to external flash at `0x71000000`. `GATE4_CORPUS` in `audio_bm.c`
+loops over them from memory-mapped flash and prints the argmax ids per utterance.
+`firmware/test/score_corpus.py` scores the capture host-side — the board reports
+what it computed and does not judge it.
+
+Trace: [`board/traces/round20_corpus64.log`](traces/round20_corpus64.log),
+full score: [`round20_corpus64.score.txt`](traces/round20_corpus64.score.txt).
+
+**Utterance 0 of the blob is byte-identical to `kCannedFeatures`**, so the run
+carries its own control: the device must reproduce the ids it produced in the
+single-utterance runs. It does — 5 disagreeing frames, the same 5.
+
+## The numbers
+
+64 utterances, 844 reference words, 6,400 frames.
+
+| comparison | S | I | D | errors | words | WER | bootstrap 95 % |
+|---|---:|---:|---:|---:|---:|---:|---|
+| host vs reference | 45 | 4 | 1 | 50 | 844 | **5.92 %** | [3.99, 8.04] |
+| device vs reference | 42 | 3 | 4 | 49 | 844 | **5.81 %** | [3.91, 7.79] |
+| device vs host | 29 | 1 | 5 | 35 | 847 | 4.13 % | [2.59, 5.86] |
+
+Paired, per utterance — the right test, because it removes the model's own errors:
+
+```
+mean difference        -0.0156 errors per utterance
+corpus WER difference  -0.118 points
+bootstrap 95 % CI      [-1.290, +1.144] points,  p = 0.897
+sign test              p = 0.455   (worse on 6, better on 10, tied on 48)
+```
+
+Per-frame argmax disagreement is **2.41 %** [2.06, 2.81]. The device reproduces
+the host transcript **exactly on 42 of 64** utterances, and is perfect against the
+reference on 38 against the host's 35.
+
+The host baseline of 5.92 % is itself a check: Gate 1 measured 5.41 % int8 WER at
+8 s on a different, larger subset.
+
+## Where the disagreements are, and whether they matter
+
+They sit almost entirely where the host itself is nearly undecided:
+
+| margin decile (host top1 − top2) | frames | disagreeing | rate | enrichment |
+|---|---:|---:|---:|---:|
+| 1 (tightest) | 625 | 94 | 15.04 % | **6.25×** |
+| 2 | 607 | 25 | 4.12 % | 1.71× |
+| 5 | 649 | 8 | 1.23 % | 0.51× |
+| 9-10 (widest) | 1308 | **0** | 0.00 % | 0.00× |
+
+`P(margin at a disagreeing frame < margin at a random frame) = 0.87`, permutation
+p = 0.0000. **Not one disagreement occurs in the widest 20 % of margins.** Median
+margin is 9.82 at all frames and 2.39 at disagreeing ones.
+
+And most of them never reach the text: **70.8 % of disagreeing frames (109 of 154)
+are blank-placement shifts that CTC collapses away**, in 65 regions. Only 45
+frames in 34 regions change the transcript. Of the 154, 126 involve a blank on one
+side; 28 are token→token.
+
+## The verdict, and what it does not license
+
+**Supported:** the paired 95 % interval contains zero — this corpus does not show
+the device to be worse than the host. Device WER is 5.81 % against the host's
+5.92 %, a difference of −0.12 points with p = 0.897.
+
+**Not supported**, and worth stating because it is tempting to skip:
+
+- "no difference" is *not* established. The same data are consistent with the
+  device being up to **1.29 WER points worse**. The interval is 2.43 points wide;
+  any true difference smaller than that is invisible at n = 64.
+- one corpus (LibriSpeech dev-clean, clean read speech, ≤ 7.69 s), one decode
+  (greedy CTC). Nothing here speaks to noise, other speakers, longer utterances,
+  or beam search. Gate 1 already measured babble at 5 dB SNR costing 60.1 % WER —
+  that is the model's problem, not the NPU's, but it is the regime that matters
+  for a product.
+- these are **host-computed features fed to the device**. This isolates the NPU
+  and says nothing about the on-device front end, which is Gate 5.
+
+## A throughput note that is not the shipping number
+
+Per-invoke, this build measures **83,997,678 cycles median = 140.0 ms**, against
+**124.0 ms** for the same graph on the single canned tensor (Round 19). The graph,
+the weights and the input size are identical; the difference is that this harness
+`memcpy`s 64,000 B from external flash immediately before each invoke, where the
+canned build reads a tensor already in RAM. The plausible mechanism is that the
+CPU's read through xSPI2 evicts weights the NPU would otherwise have found cached,
+so the invoke re-fetches them — **this is a hypothesis and has not been tested.**
+Either way it is an artifact of how the corpus is fed, not of the deployed graph:
+in the product the features arrive from the microphone via the M55 and are already
+in RAM. The shipping latency figure remains 124.0 ms.
+
+## Provenance, and a script that was nearly lost again
+
+The corpus excludes the 8 s model's own calibration set: `gen_corpus.py` reports
+`excluded 48 cal_800 keys (142 for the union of all three cal sets) from a
+1789-utterance pool`. `model/README.md` records that this project has already
+published a calibration/evaluation overlap once, so the exclusion is checked
+rather than assumed. Utterance 0 is `1272-128104-0000`, byte-identical to
+`kCannedFeatures`, which anchors the run to every earlier measurement.
+
+`firmware/tools/gen_corpus.py` was **overwritten during this round** by a second,
+independent generator written in parallel, and the authoritative one existed only
+as the blob it had already produced. It was recovered from the session transcript
+and is checked in. The test that it is the right file is not that it looks right:
+
+```
+$ python firmware/tools/gen_corpus.py --out /tmp/reauth
+$ cmp /tmp/reauth/corpus_blob.bin artifacts/corpus/corpus_blob.bin
+BYTE-IDENTICAL
+```
+
+That is the only acceptable proof for a generator, and it is the same lesson
+Round 18 opened with. The fallback generator is kept as
+`firmware/tools/gen_corpus_alt.py`; it writes to `corpus_alt.*` so it can never be
+confused with the flashed blob, and its header says so.

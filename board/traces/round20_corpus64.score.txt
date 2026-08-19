@@ -1,0 +1,261 @@
+==============================================================================
+CORPUS SCORE -- device vs host, 64 utterances
+==============================================================================
+  log                    /tmp/claude-1000/-home-claroche-stm32n6-stt/b8f6a242-baee-473d-abd4-fd4d1e108287/scratchpad/main/uart6.log
+  passes in capture      4, NOT IDENTICAL
+  scoring pass           1
+    repeat note 0        pass 1: index set differs (missing [], extra [0, 1, 2, 3, 4, 5, 6, 7])
+    repeat note 1        pass 2: index set differs (missing [], extra [0, 1, 2, 3, 4, 5, 6, 7])
+    repeat note 2        pass 3: index set differs (missing [28, 29, 30, 31, 32, 33, 34, 35], extra [0, 1, 2, 3, 4, 5, 6, 7])
+  malformed id lines     1 -- [(28, '63 ids, expected 100', '# u 28 cyc 84000814 ids: 1024 1024 1024 1024 1024 1024 1024 612 1024 1024 154 1024 1024 210 1024 51 ')]
+  measured invoke cycles n=195 min=83994166 median=83997624 max=84003072 (per-invoke counter reads, not derived)
+  model (host ref)       artifacts/onnx/q800_relu4d_all.onnx
+  sidecar schema         corpus_ref  (/home/claroche/stm32n6-stt/artifacts/corpus/corpus_ref.json)
+  blob                   artifacts/corpus/corpus_blob.bin  md5 5dda28a9dbc8156140a1ea08a9e07563
+  sidecar N / frames     64 / 100
+  truncated utterances   3 -- ['1272-141231-0012', '2428-83705-0033', '1988-147956-0027']
+                         (longer than the 800-frame window; host and device see the
+                          same truncated features, so device-vs-host is unaffected,
+                          but their WER against the reference is inflated for both)
+
+------------------------------------------------------------------------------
+1. PER-FRAME AGREEMENT (argmax id, device vs host onnxruntime)
+------------------------------------------------------------------------------
+  frames compared        6400
+  frames disagreeing     154
+  disagreement rate      2.41 %   Wilson 95% [2.06 %, 2.81 %]
+  utterances with >=1 disagreeing frame   44 / 64
+  per-utterance disagreeing frames: min 0  median 2  p90 5  max 12
+  NOTE adjacent frames are not independent, so the Wilson interval here is
+       an approximation; it is reported because the brief asks for it.
+
+------------------------------------------------------------------------------
+2. WER  (corpus-level = total errors / total reference words, the standard
+   definition -- NOT the mean of per-utterance rates)
+------------------------------------------------------------------------------
+  comparison                    S    I    D   err  words   WER      Wilson 95%           bootstrap 95%
+  host vs reference            45    4    1    50    844   5.92 %   [4.52 %, 7.73 %]  [3.99 %, 8.04 %]
+  device vs reference          42    3    4    49    844   5.81 %   [4.42 %, 7.59 %]  [3.91 %, 7.79 %]
+  device vs HOST               29    1    5    35    847   4.13 %   [2.99 %, 5.69 %]  [2.59 %, 5.86 %]
+  'device vs HOST' uses the host transcript as the reference: it is the
+  'close enough to the laptop' number, and it is the only one of the three
+  that isolates the device from the model's own errors.
+
+  per-utterance distribution of WER (errors / reference words):
+    host      min 0.00 %  q1 0.00 %  med 0.00 %  q3 9.20 %  p90 23.73 %  max 100.00 %   perfect 35/64
+    device    min 0.00 %  q1 0.00 %  med 0.00 %  q3 10.28 %  p90 18.63 %  max 100.00 %   perfect 38/64
+    dev|host  min 0.00 %  q1 0.00 %  med 0.00 %  q3 8.42 %  p90 14.00 %  max 100.00 %   perfect 42/64
+
+  per-utterance table (dfr = disagreeing frames; err = S+I+D vs reference):
+    i key                 nw  dfr hErr dErr  dif  x(S/I/D)  same_ids
+    0 1272-128104-0000    17    5    1    4   +3     2/0/2  NO
+    1 7976-105575-0004    15    6    4    3   -1     1/0/1  NO
+    2 5694-64025-0000      1    2    1    1   +0     1/0/0  NO
+    3 2803-154328-0013     7    0    0    0   +0     0/0/0  yes
+    4 777-126732-0011     21   12    5    4   -1     3/0/0  NO
+    5 3081-166546-0065     4    0    0    0   +0     0/0/0  yes
+    6 777-126732-0004     17    5    2    2   +0     1/0/0  NO
+    7 3752-4944-0045       7    0    0    0   +0     0/0/0  yes
+    8 7976-110124-0013    19    0    0    0   +0     0/0/0  yes
+    9 7850-281318-0006    21    2    0    0   +0     0/0/0  yes
+   10 251-118436-0010      6    0    0    0   +0     0/0/0  yes
+   11 1272-141231-0012    20    3    1    3   +2     1/1/0  NO
+   12 3081-166546-0059    11    0    0    0   +0     0/0/0  yes
+   13 84-121123-0006      14    3    0    0   +0     0/0/0  yes
+   14 2277-149897-0004    22    1    1    1   +0     0/0/0  yes
+   15 6345-93302-0017     17    0    0    0   +0     0/0/0  yes
+   16 1919-142785-0039     2    3    1    1   +0     1/0/0  NO
+   17 6295-244435-0027     6    0    0    0   +0     0/0/0  yes
+   18 2277-149897-0009    11    0    0    0   +0     0/0/0  yes
+   19 6295-244435-0030    18    4    0    0   +0     0/0/0  yes
+   20 6295-244435-0019     9    2    0    0   +0     0/0/0  yes
+   21 251-136532-0009      8    0    0    0   +0     0/0/0  yes
+   22 1272-135031-0016     2    2    1    1   +0     0/0/0  yes
+   23 2428-83705-0033     20    4    3    2   -1     2/0/0  NO
+   24 5338-24615-0011     21    5    2    2   +0     0/0/0  yes
+   25 6313-66129-0027     12    3    3    2   -1     1/0/0  NO
+   26 1988-147956-0017    23    3    1    1   +0     0/0/0  yes
+   27 3752-4943-0012       9    0    0    0   +0     0/0/0  yes
+   28 5694-64025-0020     28    3    2    2   +0     0/0/0  yes
+   29 8297-275154-0012     8    3    1    0   -1     1/0/0  NO
+   30 7976-105575-0001     7    0    0    0   +0     0/0/0  yes
+   31 6295-244435-0003    10    0    0    0   +0     0/0/0  yes
+   32 1919-142785-0058     4    0    0    0   +0     0/0/0  yes
+   33 2078-142845-0038    12    1    1    0   -1     0/0/1  NO
+   34 2902-9008-0011      22    2    2    3   +1     2/0/0  NO
+   35 6345-93306-0008     12    2    0    0   +0     0/0/0  yes
+   36 652-130737-0009     10    6    3    3   +0     2/0/0  NO
+   37 1462-170145-0010     6    0    0    0   +0     0/0/0  yes
+   38 1993-147965-0007    20    3    0    0   +0     0/0/0  yes
+   39 1462-170142-0035     7    1    1    0   -1     1/0/0  NO
+   40 1462-170145-0007    22    4    0    0   +0     0/0/0  yes
+   41 2428-83705-0011     15    7    2    1   -1     2/0/0  NO
+   42 5694-64038-0016      7    0    0    0   +0     0/0/0  yes
+   43 84-121123-0013       3    0    0    0   +0     0/0/0  yes
+   44 6313-76958-0007     16    4    0    0   +0     0/0/0  yes
+   45 3752-4944-0025       9    3    1    1   +0     1/0/0  NO
+   46 777-126732-0044     11    5    0    0   +0     0/0/0  yes
+   47 6345-93302-0019     11    2    0    0   +0     0/0/0  yes
+   48 174-168635-0014     10    4    0    0   +0     0/0/0  yes
+   49 6345-64257-0018     18    0    0    0   +0     0/0/0  yes
+   50 5694-64029-0013     16    1    0    0   +0     0/0/0  yes
+   51 3752-4943-0019       5    0    0    0   +0     0/0/0  yes
+   52 3081-166546-0007    19    4    1    1   +0     1/0/0  NO
+   53 2277-149897-0000    16    3    1    2   +1     1/0/0  NO
+   54 3853-163249-0045    25    1    0    0   +0     0/0/0  yes
+   55 6295-64301-0009     10    0    1    1   +0     0/0/0  yes
+   56 1988-147956-0027    26    6    1    1   +0     0/0/0  yes
+   57 2277-149896-0001    26    3    0    0   +0     0/0/0  yes
+   58 7976-110124-0005    13    5    1    0   -1     1/0/0  NO
+   59 1462-170142-0030     6    3    0    0   +0     0/0/0  yes
+   60 6313-66129-0013     17    5    4    3   -1     2/0/0  NO
+   61 1272-128104-0013    18    3    1    2   +1     1/0/1  NO
+   62 3752-4944-0002      12    2    1    1   +0     0/0/0  yes
+   63 5895-34615-0000      7    3    0    1   +1     1/0/0  NO
+
+  utterances where the device costs the most relative to the host:
+    u0 1272-128104-0000  +3 errors, 5 frames differ
+      ref  : mister quilter is the apostle of the middle classes and we are glad to welcome his gospel
+      host : mister crter is the apostle of the middle classes and we are glad to welcome his gospel
+      dev  : misterquirter is the apostle of the middle classes and were glad to welcome his gospel
+    u11 1272-141231-0012  +2 errors, 3 frames differ
+      ref  : i'm here because the matter is of utmost importance and brandd is the one i must see now stand aside
+      host : i'm here because the matter is of utmost importance and brand is the one i must see now stand aside
+      dev  : i amm here because the matter is of utmost importance and brand is the one i must see now stand aside
+    u34 2902-9008-0011  +1 errors, 2 frames differ
+      ref  : there is fruit with lentils and rice waiting for you in the next room and bread unless you despise it too much
+      host : there is fruit with lents and rice waiting for you in the next room and bread it unless you despise it too much
+      dev  : there is fruit with lentals and rice waiting for you in the next room and bred it unless you despise it too much
+    u53 2277-149897-0000  +1 errors, 3 frames differ
+      ref  : when hurstwood got back to his office again he was in a greater quandary than ever
+      host : when hurstwood got back to his office again he was in a greater quandry than ever
+      dev  : when hurswood got back to his office again he was in a greater quandry than ever
+    u61 1272-128104-0013  +1 errors, 3 frames differ
+      ref  : mister quilter has missed his chance for he has failed even to make himself the tupper of painting
+      host : mister quiilter has missed his chance for he has failed even to make himself the tupper of painting
+      dev  : misterquiilter has missed his chance for he has failed even to make himself the tupper of painting
+
+------------------------------------------------------------------------------
+3. PAIRED COMPARISON (per utterance: device errors - host errors)
+------------------------------------------------------------------------------
+  mean difference per utterance   -0.0156 errors
+  device worse on 6 utterances, better on 10, tied on 48
+  corpus WER difference           -0.118 points
+    percentile bootstrap over utterances (B=10000, resampling unit = utterance)
+    95% CI [-1.290, +1.144] points,  two-sided p = 0.8966
+  paired sign-flip permutation test (B=10000): p = 1.0000
+  exact two-sided sign test on the 16 non-tied utterances (6 worse): p = 0.4545
+  distribution of the per-utterance difference (errors: count): -1: 10, +0: 48, +1: 4, +2: 1, +3: 1
+
+------------------------------------------------------------------------------
+4. DO DISAGREEMENTS SIT AT TIGHT HOST MARGINS?  (margin = host top1 - top2 logit)
+------------------------------------------------------------------------------
+  percentile           1       5      10      25      50      75      90
+  all frames       0.531   2.654   4.512   6.901   9.820  12.475  14.863
+  disagreeing      0.000   0.000   0.265   0.796   2.389   5.773   8.228
+  median margin: all 9.820   disagreeing 2.389
+  P(margin at a disagreeing frame < margin at a random frame) = 0.8745
+    (0.5 = no relation; permutation p = 0.0000, B=2000)
+     19.48 % of disagreements fall in the tightest 1 % of margins (expected 1 % if unrelated)
+     51.95 % of disagreements fall in the tightest 5 % of margins (expected 5 % if unrelated)
+     61.69 % of disagreements fall in the tightest 10 % of margins (expected 10 % if unrelated)
+  decile of margin      all frames  disagree      rate  enrichment
+   1 [   -inf,  4.512]       625        94   15.04 %       6.25x
+   2 [  4.512,  6.370]       607        25    4.12 %       1.71x
+   3 [  6.370,  7.697]       656        10    1.52 %       0.63x
+   4 [  7.697,  8.759]       613        11    1.79 %       0.75x
+   5 [  8.759,  9.820]       649         8    1.23 %       0.51x
+   6 [  9.820, 10.882]       664         3    0.45 %       0.19x
+   7 [ 10.882, 11.944]       647         2    0.31 %       0.13x
+   8 [ 11.944, 13.005]       631         1    0.16 %       0.07x
+   9 [ 13.005, 14.863]       659         0    0.00 %       0.00x
+  10 [ 14.863,    inf]       649         0    0.00 %       0.00x
+  the sidecar carries no per-frame runner-up id (host_top2), so the
+  'did the device pick the host's second choice' split is not available.
+
+------------------------------------------------------------------------------
+5. BLANK-PLACEMENT SHIFT THAT CTC COLLAPSES AWAY, OR A REAL SUBSTITUTION?
+------------------------------------------------------------------------------
+  A disagreement is collapse-neutral if reverting it to the host ids leaves
+  the device's collapsed id sequence unchanged -- CTC swallows it.
+  A blank-placement shift moves a whole token run by a frame, so it appears
+  as several ADJACENT disagreeing frames that are only collapse-neutral
+  together -- reverting any one of them alone changes the output.  The unit
+  of the question is therefore the region: a maximal run of adjacent
+  disagreeing frames (gap tolerance 0).
+
+  region class              regions   frames
+  blank-shift                    65      109   same tokens, re-aligned against the blanks
+  neutral-other                   0        0   collapsed away, but not a pure shift
+  visible                        34       45   REACHES THE TRANSCRIPT
+  TOTAL                          99      154
+  70.78 % of disagreeing frames (109/154) are collapsed away
+  by CTC; 45 reach the transcript.
+
+  single-frame test, for reference (revert one frame at a time):
+    70 neutral / 84 visible -- this UNDERCOUNTS shifts, see above.
+
+  per-frame id change, split by the verdict of the region it belongs to:
+  kind              in neutral  in visible  total
+  blank->token              53          11     64
+  token->blank              49          13     62
+  token->token               7          21     28
+  126 of 154 frames involve a blank on one side (81.82 %); 28 are token->token.
+  utterances with disagreeing frames whose collapsed id sequence is still
+  identical to the host's: 22 / 44   (identical transcript text: 22 / 44)
+
+  every region that reaches the transcript:
+    u0   frames 13..13  host [58] -> dev [552]  min margin 1.327
+    u0   frames 48..48  host [53] -> dev [29]  min margin 1.327
+    u1   frames 14..14  host [2] -> dev [180]  min margin 0.531
+    u1   frames 16..16  host [40] -> dev [295]  min margin 0.000
+    u2   frames 11..12  host [110, 1024] -> dev [1024, 357]  min margin 0.531
+    u4   frames 14..14  host [1] -> dev [65]  min margin 1.062
+    u4   frames 49..49  host [148] -> dev [187]  min margin 0.000
+    u4   frames 68..69  host [1024, 9] -> dev [302, 302]  min margin 1.327
+    u6   frames 49..49  host [1024] -> dev [1]  min margin 2.389
+    u11  frames 10..10  host [6] -> dev [553]  min margin 0.000
+    u16  frames 29..29  host [1024] -> dev [57]  min margin 0.531
+    u16  frames 31..31  host [21] -> dev [249]  min margin 0.000
+    u23  frames 25..25  host [1024] -> dev [20]  min margin 0.265
+    u23  frames 61..61  host [10] -> dev [1024]  min margin 0.265
+    u25  frames 56..56  host [106] -> dev [40]  min margin 0.265
+    u29  frames 12..12  host [437] -> dev [10]  min margin 0.265
+    u33  frames 26..26  host [38] -> dev [1024]  min margin 0.000
+    u34  frames 24..24  host [1024] -> dev [52]  min margin 0.531
+    u34  frames 60..60  host [183] -> dev [10]  min margin 0.265
+    u36  frames 11..11  host [40] -> dev [69]  min margin 0.000
+    u36  frames 17..17  host [22] -> dev [92]  min margin 0.000
+    u39  frames 28..28  host [197] -> dev [50]  min margin 0.796
+    u41  frames 29..29  host [152] -> dev [18]  min margin 2.389
+    u41  frames 31..31  host [1024] -> dev [49]  min margin 1.327
+    u41  frames 66..69  host [1024, 12, 235, 67] -> dev [12, 1024, 1024, 235]  min margin 0.265
+    u45  frames 8..9  host [40, 1024] -> dev [1024, 446]  min margin 1.592
+    u52  frames 30..30  host [49] -> dev [55]  min margin 2.123
+    u52  frames 32..32  host [1024] -> dev [18]  min margin 0.531
+    u53  frames 13..13  host [3] -> dev [1]  min margin 0.531
+    u58  frames 43..45  host [240, 18, 302] -> dev [1024, 579, 1024]  min margin 0.000
+    u60  frames 12..13  host [74, 6] -> dev [339, 1024]  min margin 0.265
+    u60  frames 22..23  host [1024, 397] -> dev [235, 1024]  min margin 1.327
+    u61  frames 12..12  host [105] -> dev [1024]  min margin 0.000
+    u63  frames 17..18  host [3, 3] -> dev [1024, 1024]  min margin 0.796
+
+------------------------------------------------------------------------------
+6. VERDICT
+------------------------------------------------------------------------------
+  Device-vs-host WER is 4.13 % (bootstrap 95% [2.59 %, 5.86 %])
+  over 847 host words in 64 utterances.  Against the reference,
+  host 5.92 % vs device 5.81 %; the paired difference is -0.118 points
+  (bootstrap 95% [-1.290, +1.144], p = 0.8966; sign test p = 0.4545).
+
+  SUPPORTED by these numbers:
+    - the paired 95 % CI contains 0: this corpus does not show the device to be worse than the host
+    - the device reproduces the host transcript exactly on 42 of 64 utterances
+    - 70.78 % of frame disagreements are collapsed away by CTC and never reach the transcript
+
+  NOT supported by these numbers:
+    - 'no difference' is NOT established -- the same data are consistent with the device being up to 1.29 WER points worse
+    - 64 utterances / 847 words is a small sample: the bootstrap CI on the paired difference is 2.43 points wide, so any true difference smaller than that is invisible here
+    - one corpus (LibriSpeech dev-clean, clean read speech, <= 7.69 s) and one decode (greedy CTC); nothing here speaks to noisy audio, other speakers, longer utterances, or a beam search
+    - the frames come from host-computed features fed to the device: this isolates the NPU, and says nothing about the on-device front end
+==============================================================================

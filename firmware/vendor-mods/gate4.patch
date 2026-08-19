@@ -1,22 +1,3 @@
-# Gate 4 firmware instrumentation, as a real unified diff.
-#
-# firmware/apply_vendor_mods.sh does NOT apply this -- its closing note says the
-# gate4 audio_bm.c path is "applied separately", and the file it points at
-# (audio_bm.gate4.c.patch) is a truncated 80-line COPY of audio_bm.c's head, not
-# a diff, and not applicable by patch(1) or git apply.
-#
-# This file is that missing diff. It was recovered from the vendored tree, which
-# is a git clone of STM32N6-GettingStarted-Audio at tag v2.3.0 (46f1f97), by:
-#
-#   git -C vendor/STM32N6-GettingStarted-Audio diff -- \
-#       Projects/GS/Src/audio_bm.c Projects/GS/Inc/audio_bm.h \
-#       Projects/GS/Src/stm32n6xx_it.c Projects/GS/Inc/app_config.h
-#
-# Apply from the vendor root:
-#   git -C vendor/STM32N6-GettingStarted-Audio apply firmware/vendor-mods/gate4.patch
-#
-# Everything it adds is behind GATE4_CANNED / GATE4_BEACON / GATE4_EPOCH_TRACE,
-# so an unmodified `make bm` still builds ST's stock application.
 diff --git a/Projects/GS/Inc/app_config.h b/Projects/GS/Inc/app_config.h
 index 6ee31ce..d0710ff 100644
 --- a/Projects/GS/Inc/app_config.h
@@ -55,7 +36,7 @@ index 3c5cd91..a751b53 100644
    AudioPostProcCtx_t audioPostCtx;
  #if (CTRL_X_CUBE_AI_AUDIO_OUT==COM_TYPE_HEADSET)
 diff --git a/Projects/GS/Src/audio_bm.c b/Projects/GS/Src/audio_bm.c
-index 8e3d175..861709d 100644
+index 8e3d175..d384dda 100644
 --- a/Projects/GS/Src/audio_bm.c
 +++ b/Projects/GS/Src/audio_bm.c
 @@ -34,6 +34,18 @@
@@ -63,7 +44,7 @@ index 8e3d175..861709d 100644
  #include "preproc_dpu.h"                           /* Preprocessing includes  */
  #include "postproc_dpu.h"                          /* Postprocessing includes */
 +
-+#ifdef GATE4_CANNED
++#if defined(GATE4_CANNED) || defined(GATE4_CORPUS)
 +#include <string.h>
 +#include "mcu_cache.h"
 +#include "canned_features.h"
@@ -316,7 +297,7 @@ index 8e3d175..861709d 100644
  
    /* by default processing is active */
    AudioProcIsOn = true;
-@@ -138,9 +332,133 @@ void init_bm(void)
+@@ -138,9 +332,243 @@ void init_bm(void)
    * @param  None
    * @retval None
    */
@@ -439,10 +420,120 @@ index 8e3d175..861709d 100644
 +}
 +#endif /* GATE4_CANNED */
 +
++#ifdef GATE4_CORPUS
++/* stm32n6-stt: multi-utterance device-vs-host comparison.
++ *
++ * Gate 4's execution question is closed (board/GATE4.md Round 19: 448 epochs,
++ * 124.0 ms, deterministic across two schedules). What is open is whether the
++ * device's int8 arithmetic is close enough to the host's, and one canned
++ * utterance cannot answer that -- 4 word errors in 17 words is a Wilson
++ * interval of [9.6 %, 47.3 %].
++ *
++ * So: a corpus of N feature tensors is flashed to external flash, and this loops
++ * over them printing the argmax ids for each. Scoring is host-side
++ * (firmware/test/score_corpus.py) -- the board's job is to report what it
++ * computed, not to judge it.
++ *
++ * The blob is NOT compiled in. 64 utterances is 4 MB of .rodata against a 1 MB
++ * RAM region that is already at 77 % with a single tensor, and this application
++ * is copied to RAM to run. It lives in external flash instead, memory-mapped by
++ * Ext_Mem_Config() exactly as the weight blob at 0x70400000 is, and is read from
++ * there directly. The weights end around 0x70D9C000, so 0x71000000 is clear.
++ *
++ * Layout, matching firmware/tools/gen_corpus.py:
++ *   0x00  "STTC"   0x04  uint32 N   0x08  uint32 T   0x0C  uint32 NMEL
++ *   0x40  N tensors of T*NMEL int8, mel-major, back to back
++ */
++#define GATE4_CORPUS_BASE 0x71000000u
++
++static void gate4_corpus(void)
++{
++  const volatile uint32_t *hdr = (const volatile uint32_t *)GATE4_CORPUS_BASE;
++  const uint32_t magic = hdr[0];
++  const uint32_t n_utt = hdr[1];
++  const uint32_t t_len = hdr[2];
++  const uint32_t n_mel = hdr[3];
++
++  my_printf("\r\n# gate4 corpus @ %p magic=%08lx N=%lu T=%lu NMEL=%lu\r\n",
++            (void *)GATE4_CORPUS_BASE, (unsigned long)magic,
++            (unsigned long)n_utt, (unsigned long)t_len, (unsigned long)n_mel);
++
++  /* "STTC" little-endian. A blank or mis-flashed slot reads 0xFFFFFFFF or 0, and
++   * silently scoring garbage would be worse than not running. */
++  if (magic != 0x43545453u)
++  {
++    my_printf("# corpus magic bad -- expected 43545453, flash the blob to %p\r\n",
++              (void *)GATE4_CORPUS_BASE);
++    return;
++  }
++
++  const uint32_t utt_bytes = t_len * n_mel;
++  if (utt_bytes != (uint32_t)STAI_NETWORK_IN_1_SIZE_BYTES)
++  {
++    my_printf("# corpus geometry %lu B != model input %d B -- refusing\r\n",
++              (unsigned long)utt_bytes, (int)STAI_NETWORK_IN_1_SIZE_BYTES);
++    return;
++  }
++
++  if (AiDPULoadModel(&g4_aictx) != DPU_OK)
++  {
++    my_printf("# gate4 corpus: AiDPULoadModel FAILED\r\n");
++    return;
++  }
++
++  int8_t *in  = (int8_t *) g4_aictx.p_stai_inputs[0];
++  int8_t *out = (int8_t *) g4_aictx.p_stai_outputs[0];
++  const uint32_t out_bytes = (uint32_t)STAI_NETWORK_OUT_1_SIZE_BYTES;
++  const uint32_t n_frames  = out_bytes / (uint32_t)CANNED_NVOCAB;
++
++  for (uint32_t pass = 0; ; pass++)
++  {
++    my_printf("\r\n# ---- corpus pass %lu ----\r\n", (unsigned long)pass);
++
++    for (uint32_t i = 0; i < n_utt; i++)
++    {
++      const int8_t *src = (const int8_t *)(GATE4_CORPUS_BASE + 0x40u + i * utt_bytes);
++      memcpy(in, src, utt_bytes);
++      mcu_cache_clean_invalidate_range((uint32_t)in, (uint32_t)in + utt_bytes);
++
++      port_dwt_reset();
++      uint32_t t0 = (uint32_t)port_dwt_get_cycles();
++      AiDPUProcess(&g4_aictx);
++      uint32_t cycles = (uint32_t)port_dwt_get_cycles() - t0;
++
++      /* the stock app never invalidates the output; the NPU writes it by another
++       * path and the M55 D-cache may hold stale lines. */
++      mcu_cache_invalidate_range((uint32_t)out, (uint32_t)out + out_bytes);
++
++      my_printf("# u %lu cyc %lu ids:", (unsigned long)i, (unsigned long)cycles);
++      for (uint32_t f = 0; f < n_frames; f++)
++      {
++        const int8_t *row = out + f * (uint32_t)CANNED_NVOCAB;
++        int8_t   best_v = row[0];
++        uint32_t best_i = 0;
++        for (uint32_t v = 1; v < (uint32_t)CANNED_NVOCAB; v++)
++        {
++          if (row[v] > best_v) { best_v = row[v]; best_i = v; }
++        }
++        my_printf(" %lu", (unsigned long)best_i);
++      }
++      my_printf("\r\n");
++    }
++
++    my_printf("# corpus done %lu utterances\r\n", (unsigned long)n_utt);
++    HAL_Delay(5000);
++  }
++}
++#endif /* GATE4_CORPUS */
++
  void exec_bm(void)
  {
    bool cont = true;
-+#ifdef GATE4_CANNED
++#if defined(GATE4_CORPUS)
++  (void)cont;
++  gate4_corpus();
++  while (1) { __NOP(); }
++#elif defined(GATE4_CANNED)
 +  (void)cont;
 +  gate4_canned();
 +  while (1) { __NOP(); }
@@ -450,7 +541,7 @@ index 8e3d175..861709d 100644
    time_stats_init();
  
    initAudioProc(&audio_proc_ctx);
-@@ -172,6 +490,7 @@ void exec_bm(void)
+@@ -172,6 +600,7 @@ void exec_bm(void)
  
    test_dump();
    my_printf("\n\r# End Processing\n\r");
@@ -458,7 +549,7 @@ index 8e3d175..861709d 100644
  }
  #endif
  /**
-@@ -842,7 +1161,18 @@ static void Ext_Mem_Config(void)
+@@ -842,7 +1271,18 @@ static void Ext_Mem_Config(void)
      __BKPT(0);
    }
    BSP_XSPI_NOR_EnableMemoryMappedMode(0);
