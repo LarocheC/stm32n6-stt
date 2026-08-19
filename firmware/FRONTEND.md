@@ -1036,3 +1036,33 @@ wide interval and should not be quoted as a precise figure.
 One utterance, three steps. §13's rule was designed against round 24's 1067
 clipped samples and 62.5 % WER; here it caught 116 clipped samples and corrected
 in a single window.
+
+
+### Confirmed: the errors are the model's, not the deployment's
+
+The recovered recording run back through the model on a workstation, same audio,
+same front end:
+
+| | WER | text |
+|---|---:|---|
+| fp32 cleaned graph, host, **no quantisation** | 25.0 % | "the birched gaoe slid on the smooth planks" |
+| int8 deployed graph, host | 25.0 % | "the birched canoe slid on the smooth plananks" |
+| **the board** | **12.5 %** | "the birched canoe slid on the smooth planks" |
+
+**The full-precision reference model makes the same errors on the same audio**,
+and the device scored better than the host on this utterance (single-utterance
+noise, but certainly not worse). That removes the last shared-mode explanation:
+the errors survive removing the NPU, the int8 quantisation, and the M55.
+
+The operator has a French accent, which fits both the measurement and the error
+pattern — *birch* survives while *canoe slid* collapses and *planks* becomes
+*plananks*: consonant clusters and vowel quality, exactly where accent mismatch
+bites a CTC model with no language model. LibriSpeech is read audiobook English
+by overwhelmingly native, mostly American speakers.
+
+**This is the cheapest failure mode to fix, and it needs no firmware work.**
+`model/fold_stride2.py`, `model/break_relu_chain.py` and `compile/gen_model.sh`
+operate on graph structure, not weights, so a fine-tuned or differently-trained
+Citrinet re-runs the identical pipeline. Gate 5 therefore closes with the chain
+verified end to end and the residual attributed to the training data of the model
+the project started from.
