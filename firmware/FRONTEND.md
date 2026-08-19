@@ -723,3 +723,93 @@ far-field MEMS microphone in a room, against LibriSpeech's close read speech —
 plus a windowing mismatch: a ~2.5 s sentence inside an 8 s window whose
 per-feature mean and standard deviation were calibrated on 4–7.5 s of continuous
 speech. Neither is a property of the port, and both are measurable separately.
+
+
+---
+
+## 12. Quantisation noise: not a factor. My AGC target: a padding artefact — 2026-08-19
+
+Raised as a question — *"if the noise level is −54 dBFS and the audio is recorded
+in int8, there'll be a fair bit of quantisation noise that is not in the canned
+waveforms"* — and worth answering with numbers, because the answer to the
+question as asked is no, and the answer to the question behind it is worse than
+quantisation noise.
+
+**First, the capture is int16, not int8.** `AUDIO_RESOLUTION_16B`
+(`audio_bm.c:1610`), and `BSP_AUDIO_IN_SetBitsPerSample(1, AUDIO_RESOLUTION_8B)`
+is asserted to return `BSP_ERROR_FEATURE_NOT_SUPPORTED`. The int8 in this project
+is the *feature tensor* after the log-mel, not the waveform. The int16
+quantisation floor is `LSB/sqrt(12)` = **−101.1 dBFS**.
+
+### The measurement
+
+Eight canned utterances, peak-scaled to each level, through the identical front
+end twice: once truncated to int16 the way the capture path does, once kept in
+float.
+
+| peak dBFS | int16 WER | float WER | truncation cost | raw guard | zero-excluded |
+|---:|---:|---:|---:|---:|---:|
+| −3.8 | 6.25 % | 7.64 % | −1.39 | 27.5 % | 6.8 % |
+| −7.6 | **5.56 %** | 6.94 % | −1.39 | 30.6 % | 13.0 % |
+| −12.0 | 7.64 % | 6.94 % | +0.69 | 33.5 % | 21.1 % |
+| −19.0 | 6.94 % | 7.64 % | −0.69 | 40.1 % | 32.3 % |
+| −23.0 | 8.33 % | 6.94 % | +1.39 | 45.1 % | 39.4 % |
+| −30.0 | 6.94 % | 9.72 % | −2.78 | 56.1 % | **51.4 %** |
+| −40.0 | 9.72 % | 10.42 % | −0.69 | 73.6 % | 66.9 % |
+| −54.0 | 18.06 % | 17.36 % | +0.69 | 92.0 % | 88.6 % |
+
+**Quantisation is invisible.** The truncation cost is ±1.4 points and changes
+sign five times — one or two word errors in 144, i.e. noise. The two columns are
+the same curve. The arithmetic agrees: a −101 dBFS quantisation floor under a
+room noise floor tens of dB above it means the capture is self-dithered.
+
+**Level does matter, below about −30 dBFS peak** — flat 6–8 % from −3.8 to −30,
+then 9.7 % at −40 and 18.1 % at −54. The mechanism is the **log guard**, an
+absolute floor at 2⁻²⁴, not the ADC. §§9–11 and `docs/FEASIBILITY.md` §2(d)
+repeatedly attribute low-level failure to the int16 truncation; that attribution
+is wrong, and the two should be kept apart. `CITRINET_FE_GUARD_MAX_FRAC = 50 %`
+on the zero-excluded fraction first fires at −30 dBFS — exactly where the curve
+turns. The threshold is well placed.
+
+### The 35.6 % figure §10 built the controller on is zero-padding
+
+| | audio | zeros | `guard_below` | raw % | `guard_zero` | zero-excluded |
+|---|---:|---:|---:|---:|---:|---:|
+| u2 `5694-64025-0000` | 1.97 s | 80.5 % | 58,899 | 92.0 % | 50,400 | 62.5 % |
+| u9 `7850-281318-0006` | 7.84 s | 6.1 % | 8,260 | 12.9 % | 3,440 | 8.0 % |
+| u11 `1272-141231-0012` | 7.99 s | 4.3 % | 7,866 | 12.3 % | 2,320 | 9.0 % |
+| **median over 16** | | | | **35.6 %** | | **10.6 %** |
+
+`guard_below` tracks the padding fraction almost exactly. The corpus window holds
+2–8 s of speech in an 8 s window; the rest is exact digital zeros, whose mel
+energy is exactly 0 and so below 2⁻²⁴. `citrinet_fe.c`'s own `guard_fraction()`
+subtracts them — the number the refusal is actually defined on has a **median of
+10.6 %**.
+
+**§10 and §11 targeted the raw figure.** A live capture fills all 128,000 samples
+with real audio and has no padding, so the only way to reach 36 % is to push real
+speech below the guard. The controller did exactly that: gain 2 → −5, **21 dB
+discarded**, parking the board at −19 to −23 dBFS peak. From the table above that
+costs **0.7–2.1 WER points** and spends the margin that separates the plateau
+from the cliff.
+
+There is also a design error underneath the numerical one. **Guard occupancy
+cannot be servo'd by gain at all.** Gain scales speech and room noise together,
+leaving their ratio unchanged, while moving both toward an absolute floor.
+LibriSpeech's 10.6 % comes from genuinely quiet passages in a quiet room; a gain
+knob cannot manufacture that, only counterfeit it by pushing speech down.
+
+### The correction
+
+The AGC targets **peak level at −7.6 dBFS**, the corpus median peak — mid-plateau,
+22 dB of margin before the curve turns. It starts at the BSP default gain of 2,
+which measured −3.8 dBFS with 0 clipped samples, so it moves at most one step.
+Deadband ±3 dB, ≤3 steps per utterance, still frozen when no tokens decode.
+Guard occupancy is still computed, still printed, and still drives the
+`CITRINET_FE_E_GUARD` refusal — it is a diagnostic and a stop condition, which is
+what it was before §10 promoted it to a setpoint.
+
+**§10's and §11's guard-occupancy conclusions are withdrawn.** §11 already
+recorded that the hypothesis failed to reproduce; this is the reason it failed.
+The eleven-utterance correlation in §10 was eleven different physical utterances
+at different speaking levels, confounded from the start.

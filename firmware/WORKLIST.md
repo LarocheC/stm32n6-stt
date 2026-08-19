@@ -725,9 +725,12 @@ Prefer knob 1 (analogue-domain, no clipping risk from a fixed shift), instrument
 > **Second half: the criterion was wrong and is withdrawn.** "< 20 % on live
 > speech" was derived from the −54 dBFS assumption — the fear being that a
 > too-quiet capture drives occupancy *up*. On silicon the stock gain gives
-> **0.1 %**, so the criterion passes trivially and measures nothing. Worse, the
-> evaluation corpus this model is scored on sits at a **median 35.6 %**
-> occupancy, so "< 20 %" would reject the reference distribution itself.
+> **0.1 %**, so the criterion passes trivially and measures nothing. The evaluation
+> corpus's raw `guard_below` median of 35.6 % looks like it would reject the
+> reference distribution — but that figure is **mostly zero-padding** (2–8 s of
+> speech in an 8 s window). The corpus median on the zero-excluded fraction,
+> which is what the refusal is defined on, is **10.6 %**. See
+> `firmware/FRONTEND.md` §12.
 >
 > Replaced by: **`citrinet_fe_run()` must return `CITRINET_FE_OK` on live speech**
 > — i.e. occupancy under `CITRINET_FE_GUARD_MAX_FRAC`, which is the threshold the
@@ -736,10 +739,12 @@ Prefer knob 1 (analogue-domain, no clipping risk from a fixed shift), instrument
 > "stop if" is retained in spirit: sustained `E_GUARD` after the AGC has
 > converged means the gain is in the wrong place.
 >
-> A word on what the middle of that range is worth. Eleven utterances in
-> `round22` put the fewest errors at 26–50 % occupancy, matching the corpus
-> median; six utterances in `round23` did not reproduce it. Treat 36 % as a
-> defensible default for the AGC setpoint, not as a calibrated optimum.
+> **Guard occupancy is not an AGC setpoint, and §12 explains why I briefly made
+> it one.** It cannot be servo'd by gain — gain scales speech and room noise
+> together while moving both toward an absolute floor — and the 35.6 % that made
+> it look like a target is padding. The AGC targets **peak level at −7.6 dBFS**,
+> the corpus median peak, mid-plateau on a WER-versus-level curve that is flat
+> from −3.8 to −30 dBFS and turns at −40.
 
 **Unverified:** M55 log-mel cost. 800 frames × (512-pt real FFT + 500 MAC + 80 `logf` +
 80 quantise), plus a second pass of 64,000 multiply-adds. Nobody on this machine has

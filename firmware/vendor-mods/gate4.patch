@@ -73,7 +73,7 @@ index d4ebc45..8162f80 100644
  LD_FLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS)
  LD_FLAGS += -Wl,--cref -Wl,--gc-sections
 diff --git a/Projects/GS/Src/audio_bm.c b/Projects/GS/Src/audio_bm.c
-index 8e3d175..617ae69 100644
+index 8e3d175..fc58d82 100644
 --- a/Projects/GS/Src/audio_bm.c
 +++ b/Projects/GS/Src/audio_bm.c
 @@ -34,6 +34,24 @@
@@ -340,7 +340,7 @@ index 8e3d175..617ae69 100644
  
    /* by default processing is active */
    AudioProcIsOn = true;
-@@ -138,9 +338,776 @@ void init_bm(void)
+@@ -138,9 +338,792 @@ void init_bm(void)
    * @param  None
    * @retval None
    */
@@ -841,21 +841,38 @@ index 8e3d175..617ae69 100644
 + *      HAL_MDF_STATE_ACQUISITION (stm32n6xx_hal_mdf.c:1808), so it is called
 + *      after BSP_AUDIO_IN_Record(), not before.
 + *
-+ *      THE AGC TARGETS GUARD OCCUPANCY, NOT LEVEL, and the first silicon run is
-+ *      why.  This board's microphone is not quiet: at the stock gain of 2 it
-+ *      delivered a -3.8 dBFS peak with 0 clipped samples, against the -54 dBFS
-+ *      docs/FEASIBILITY.md section 2(d) assumed and built a 35 % WER prediction
-+ *      on.  That assumption is wrong by about 50 dB and the gain-staging risk it
-+ *      created never existed.  But the loudest captures were not the best ones:
-+ *      over 11 spoken utterances of one sentence, mean errors ran 3.5 at 0-25 %
-+ *      guard, 1.8 at 26-50 %, 2.5 at 51-70 %, and the eval corpus's own median
-+ *      guard occupancy is 35.6 % (artifacts/corpus/wav_ref.json).  The mechanism
-+ *      is distribution match, not headroom: LibriSpeech has near-silent pauses
-+ *      that fall below the 2^-24 guard, a hot close-mic capture has a noise floor
-+ *      that never does, and per-feature normalisation then works from different
-+ *      statistics than training.  So drive guard occupancy to the corpus median
-+ *      and let the level land where it lands.  n=1 per condition, one speaker,
-+ *      one sentence -- a trend with a mechanism, not a calibrated number.
++ *      THE AGC TARGETS PEAK LEVEL.  It briefly targeted guard occupancy instead,
++ *      and that was a mistake worth recording rather than deleting.
++ *
++ *      What is true: this board's microphone is not quiet.  At the stock gain of
++ *      2 it delivers a -3.8 dBFS peak with 0 clipped samples, against the -54
++ *      dBFS docs/FEASIBILITY.md section 2(d) assumed.  That premise is wrong by
++ *      about 50 dB and the gain deficit it predicted never existed.
++ *
++ *      What was NOT true: that the eval corpus sits at 35.6 % guard occupancy and
++ *      the AGC should drive live audio to match.  That 35.6 % is the RAW
++ *      guard_below count, and it is mostly ZERO PADDING -- the corpus window holds
++ *      2-8 s of speech in an 8 s window and the remainder is exact digital
++ *      silence, whose mel energy is exactly 0 and therefore below 2^-24.  The
++ *      corpus figure with those excluded -- which is what citrinet_fe.c's own
++ *      guard_fraction() tests against CITRINET_FE_GUARD_MAX_FRAC -- is 10.6 %.
++ *      A live capture fills all 128,000 samples with real audio and has no
++ *      padding, so the only way for it to reach 36 % is to push REAL SPEECH below
++ *      the guard.  The controller did exactly that: gain 2 -> -5, throwing away
++ *      21 dB.  Measured cost on canned material peak-scaled to those levels:
++ *      6.25 % WER at -3.8 dBFS and 5.56 % at -7.6, against 6.94 % at -19 and
++ *      8.33 % at -23.
++ *
++ *      And guard occupancy cannot be servo'd by gain in the first place: gain
++ *      scales speech and room noise together, leaving their ratio alone, while
++ *      moving both toward an ABSOLUTE floor at 2^-24.  It is a diagnostic and a
++ *      refusal criterion, not a setpoint.  Kept as both, printed every utterance.
++ *
++ *      So: target the peak at the corpus median of -7.6 dBFS.  Measured WER
++ *      against peak level is flat at 6-8 % from -3.8 down to -30 dBFS, 9.7 % at
++ *      -40 and 18.1 % at -54, so the target sits in the middle of the plateau
++ *      with 22 dB of margin before the curve turns -- and, reassuringly,
++ *      CITRINET_FE_GUARD_MAX_FRAC first fires at -30 dBFS, exactly where it does.
 + *   2. citrinet_fe_peak_normalize(), digital, applied AFTER it.  This is the
 + *      knob FEASIBILITY says is the weak one -- so run it as the CONTROL, not
 + *      as the fix, and print both transcripts.  If "raw" and "norm" agree, the
@@ -869,18 +886,14 @@ index 8e3d175..617ae69 100644
 + * citrinet_fe_run() returns CITRINET_FE_E_GUARD (-4) past 50 %.  The NPU runs
 + * anyway -- refusing would hide exactly the degradation we are here to see.
 + */
-+#define G5M_TARGET_GUARD_PCT  36       /* wav_ref.json: corpus median 35.6 %   */
-+#define G5M_GUARD_PER_STEP    8         /* percentage points per MDF gain step,
-+                                         * measured: gain -8 -> 66-69 %, -6 ->
-+                                         * 50-57 %, -4 -> 33-34 %, -3 -> 20 %.
-+                                         * Integer division by this is also the
-+                                         * deadband, so +-7 points does not move */
++#define G5M_TARGET_DBFS_X10   (-76)    /* corpus median PEAK, wav_ref.json      */
++#define G5M_STEP_DB_X10       30       /* one MDF gain step, ~3 dB              */
 +#define G5M_GAIN_MIN          (-16)
 +#define G5M_GAIN_MAX          24
 +#define G5M_MAX_STEP          3        /* per utterance, so a wild reading cannot
 +                                        * slam the gain to a rail in one go    */
-+#define G5M_START_GAIN        (-4)     /* where this room landed; the loop moves
-+                                        * it, this only shortens the approach   */
++#define G5M_START_GAIN        2        /* MDF_GAIN(16000), the BSP default, which
++                                        * measured -3.8 dBFS peak and 0 clipped  */
 +#define G5M_SETTLE_MS         400u     /* dropped: MDF high-pass + gain change  */
 +
 +static volatile uint32_t g5m_w;        /* samples written, 0..CITRINET_FE_NSAMPLES */
@@ -1067,17 +1080,20 @@ index 8e3d175..617ae69 100644
 +    }
 +    else if (peak > 0u)
 +    {
-+      /* guard above target => too quiet => raise gain.  Integer division is the
-+       * deadband: anything inside +-G5M_GUARD_PER_STEP leaves the gain alone. */
-+      int steps = ((int)raw.guard_pct - G5M_TARGET_GUARD_PCT) / G5M_GUARD_PER_STEP;
++      /* peak below target => too quiet => raise gain.  Integer division is the
++       * deadband: anything inside +-3 dB, one step, leaves the gain alone. */
++      int steps = (G5M_TARGET_DBFS_X10 - g5m_dbfs_x10(peak)) / G5M_STEP_DB_X10;
 +      if (steps >  G5M_MAX_STEP) steps =  G5M_MAX_STEP;
 +      if (steps < -G5M_MAX_STEP) steps = -G5M_MAX_STEP;
 +      int ng = gain + steps;
 +      if (ng < G5M_GAIN_MIN) ng = G5M_GAIN_MIN;
 +      if (ng > G5M_GAIN_MAX) ng = G5M_GAIN_MAX;
-+      my_printf("# G %lu guard %lu%% target %d%% gain %d -> %d\r\n",
-+                (unsigned long)utt, (unsigned long)raw.guard_pct,
-+                G5M_TARGET_GUARD_PCT, gain, ng);
++      my_printf("# G %lu peak ", (unsigned long)utt);
++      g5m_print_dbfs(g5m_dbfs_x10(peak));
++      my_printf(" target ");
++      g5m_print_dbfs(G5M_TARGET_DBFS_X10);
++      my_printf(" dBFS  guard %lu%% (diagnostic)  gain %d -> %d\r\n",
++                (unsigned long)raw.guard_pct, gain, ng);
 +      gain = ng;
 +    }
 +
@@ -1117,7 +1133,7 @@ index 8e3d175..617ae69 100644
    time_stats_init();
  
    initAudioProc(&audio_proc_ctx);
-@@ -172,6 +1139,7 @@ void exec_bm(void)
+@@ -172,6 +1155,7 @@ void exec_bm(void)
  
    test_dump();
    my_printf("\n\r# End Processing\n\r");
@@ -1125,7 +1141,7 @@ index 8e3d175..617ae69 100644
  }
  #endif
  /**
-@@ -554,7 +1522,14 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
+@@ -554,7 +1538,14 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
  {
    if (Instance == 1U)
    {
@@ -1140,7 +1156,7 @@ index 8e3d175..617ae69 100644
    }
  }
  
-@@ -567,7 +1542,11 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
+@@ -567,7 +1558,11 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
  {
    if (Instance == 1U)
    {
@@ -1152,7 +1168,7 @@ index 8e3d175..617ae69 100644
    }
  }
  #if (CTRL_X_CUBE_AI_AUDIO_OUT==COM_TYPE_HEADSET)
-@@ -842,7 +1821,18 @@ static void Ext_Mem_Config(void)
+@@ -842,7 +1837,18 @@ static void Ext_Mem_Config(void)
      __BKPT(0);
    }
    BSP_XSPI_NOR_EnableMemoryMappedMode(0);

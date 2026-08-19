@@ -256,9 +256,14 @@ the third was **not real**:
    wrong by about 50 dB.** The −54 dBFS figure below is not what this board's
    microphone delivers. At the stock `MDF_GAIN(16000) = 2` it produced a
    **−3.8 dBFS peak with zero clipped samples** and 0 % guard occupancy. There
-   was no deficit to correct, and the 35.28 % WER prediction never applied. What
-   the AGC is actually for is staying out of the *quiet* extreme, where
-   `citrinet_fe_run()` correctly refuses (`rc -4`) — measured at 66-90 % guard.
+   was no deficit to correct. Measured WER against capture level, on canned
+   material peak-scaled: **flat at 6–8 % from −3.8 down to −30 dBFS**, 9.7 % at
+   −40, 18.1 % at −54. The mechanism at the bottom is the **log guard**, not the
+   int16 truncation — truncating to int16 costs ±1.4 points with no trend at any
+   level, so **quantisation noise is not a factor**
+   (`firmware/FRONTEND.md` §12). The AGC targets a −7.6 dBFS peak, mid-plateau;
+   `CITRINET_FE_GUARD_MAX_FRAC` first fires at −30 dBFS, exactly where the curve
+   turns.
 
 **Live WER is 20.8-25.0 %** over six utterances of one sentence, one speaker, one
 room — against **4.3 %** for the same image on canned waveforms in the same boot.
