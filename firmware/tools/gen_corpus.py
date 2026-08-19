@@ -167,10 +167,16 @@ def main():
     assert len({r["k"] for r in chosen}) == args.n, "duplicate key selected"
 
     # ---- host reference ----------------------------------------------------
-    # DEFAULT optimisation level: that is what kExpectedTokens was generated
-    # with, and the brief records it reproduces at EXTENDED and ALL too.
+    # ORT_ENABLE_ALL is onnxruntime's ACTUAL default -- the level you get when no
+    # SessionOptions is passed at all -- and it is what artifacts/corpus/
+    # corpus_ref.json's host_ids were produced at.  An earlier revision of this
+    # file set ORT_ENABLE_BASIC and labelled it "the default"; it was neither, and
+    # a rerun would have reproduced corpus_blob.bin byte for byte (the features do
+    # not go through onnxruntime) while disagreeing with its own sidecar's ids on
+    # 9 of 16 utterances.  See firmware/tools/gen_wav_corpus.py, which measured
+    # the level sweep: ALL 16/16, EXTENDED 16/16, BASIC 7/16, DISABLE_ALL 7/16.
     so = ort.SessionOptions()
-    so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
+    so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     sess = ort.InferenceSession(os.path.join(REPO, MODEL), so,
                                 providers=["CPUExecutionProvider"])
     iname = sess.get_inputs()[0].name
@@ -225,7 +231,7 @@ def main():
     side = {
         "generated_by": "firmware/tools/gen_corpus.py",
         "model": MODEL,
-        "ort_graph_optimization_level": "ORT_ENABLE_BASIC (onnxruntime default)",
+        "ort_graph_optimization_level": "ORT_ENABLE_ALL (onnxruntime's actual default; matches corpus_ref.json)",
         "onnxruntime": ort.__version__,
         "scale": SCALE, "T": T, "NMEL": NMEL, "NVOCAB": NVOCAB, "BLANK": BLANK,
         "lead_in_samples": LEAD_IN,

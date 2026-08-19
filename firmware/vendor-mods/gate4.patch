@@ -73,22 +73,25 @@ index d4ebc45..8162f80 100644
  LD_FLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS)
  LD_FLAGS += -Wl,--cref -Wl,--gc-sections
 diff --git a/Projects/GS/Src/audio_bm.c b/Projects/GS/Src/audio_bm.c
-index 8e3d175..4992381 100644
+index 8e3d175..2a35cb9 100644
 --- a/Projects/GS/Src/audio_bm.c
 +++ b/Projects/GS/Src/audio_bm.c
-@@ -34,6 +34,21 @@
+@@ -34,6 +34,24 @@
  #include "AudioCapture_ring_buff.h"
  #include "preproc_dpu.h"                           /* Preprocessing includes  */
  #include "postproc_dpu.h"                          /* Postprocessing includes */
 +
-+#if defined(GATE4_CANNED) || defined(GATE4_CORPUS) || defined(GATE5_WAV)
++#if defined(GATE4_CANNED) || defined(GATE4_CORPUS) || defined(GATE5_WAV) || \
++    defined(GATE5_MIC)
 +#include <string.h>
 +#include "mcu_cache.h"
 +#include "canned_features.h"
 +#include "stai_network.h"
 +#endif
-+#ifdef GATE5_WAV
++#if defined(GATE5_WAV) || defined(GATE5_MIC)
++#include <math.h>
 +#include "citrinet_fe.h"
++#include "citrinet_ctc.h"
 +#endif
 +#ifdef GATE4_BEACON
 +#include "ll_aton_NN_interface.h"
@@ -98,7 +101,7 @@ index 8e3d175..4992381 100644
  #include "ai_dpu.h"                                /* AI includes             */
  #include "test.h"
  #include "audio_bm.h"
-@@ -72,8 +87,15 @@ static bool AudioProcIsOn;
+@@ -72,8 +90,15 @@ static bool AudioProcIsOn;
  
  #ifdef APP_BARE_METAL
  static AudioBM_acq_t  audio_acq_ctx;
@@ -114,7 +117,7 @@ index 8e3d175..4992381 100644
  #if (CTRL_X_CUBE_AI_AUDIO_OUT==COM_TYPE_HEADSET)
  int16_t  playback_buf[PLAYBACK_BUFFER_SIZE] __NON_CACHEABLE;
  #endif
-@@ -87,6 +109,133 @@ static const char *sAiAudioClassLabels[CTRL_X_CUBE_AI_MODEL_CLASS_NUMBER] = \
+@@ -87,6 +112,133 @@ static const char *sAiAudioClassLabels[CTRL_X_CUBE_AI_MODEL_CLASS_NUMBER] = \
    * @param  None
    * @retval None
    */
@@ -248,7 +251,7 @@ index 8e3d175..4992381 100644
  void init_bm(void)
  {
    /* Power on ICACHE */
-@@ -96,6 +245,19 @@ void init_bm(void)
+@@ -96,6 +248,19 @@ void init_bm(void)
    __HAL_RCC_CPUCLK_CONFIG(RCC_CPUCLKSOURCE_HSI);
    __HAL_RCC_SYSCLK_CONFIG(RCC_SYSCLKSOURCE_HSI);
  
@@ -268,7 +271,7 @@ index 8e3d175..4992381 100644
    HAL_Init();
  
    SystemClock_Config_Full();
-@@ -108,25 +270,60 @@ void init_bm(void)
+@@ -108,25 +273,60 @@ void init_bm(void)
    fuse_vddio();
  #endif
  
@@ -337,7 +340,7 @@ index 8e3d175..4992381 100644
  
    /* by default processing is active */
    AudioProcIsOn = true;
-@@ -138,9 +335,417 @@ void init_bm(void)
+@@ -138,9 +338,709 @@ void init_bm(void)
    * @param  None
    * @retval None
    */
@@ -566,7 +569,7 @@ index 8e3d175..4992381 100644
 +}
 +#endif /* GATE4_CORPUS */
 +
-+#ifdef GATE5_WAV
++#if defined(GATE5_WAV) || defined(GATE5_MIC)
 +/* stm32n6-stt: Gate 5 bring-up -- replay canned WAVEFORMS through the real
 + * front end on the M55, then the NPU, in one image.
 + *
@@ -629,7 +632,56 @@ index 8e3d175..4992381 100644
 +  return ok;
 +}
 +
-+static void gate5_wav(void)
++/* Probe the two scratch banks, bring up the front end and load the network.
++ * Hoisted out of gate5_wav() so gate5_mic() can share it, and idempotent so an
++ * image that runs the replay first and the microphone afterwards loads the
++ * network once. */
++static int g5_ready;
++
++static int g5_init_common(const char *who)
++{
++  if (g5_ready) return 1;
++
++  if (!g5_probe_ram(GATE5_PCM_RAM) || !g5_probe_ram(GATE5_SCRATCH_RAM))
++  {
++    my_printf("# %s: AXISRAM3/4 did not hold a written pattern -- refusing\r\n", who);
++    return 0;
++  }
++  if (citrinet_fe_init(&g5_fe, (void *)GATE5_SCRATCH_RAM,
++                       CITRINET_FE_SCRATCH_BYTES) != CITRINET_FE_OK)
++  {
++    my_printf("# %s: citrinet_fe_init failed\r\n", who);
++    return 0;
++  }
++  if (AiDPULoadModel(&g4_aictx) != DPU_OK)
++  {
++    my_printf("# %s: AiDPULoadModel FAILED\r\n", who);
++    return 0;
++  }
++  g5_ready = 1;
++  return 1;
++}
++
++/* The 80 mel rows of the feature tensor, hashed one at a time.
++ * firmware/test/score_wav.py computes the same 80 hashes on the host
++ * (row b is bytes [b*800, (b+1)*800) -- citrinet_fe.h: out[b*800 + t]), so a
++ * whole-tensor hash that disagrees turns into "these mel bins" for free.
++ * Cheap enough to leave on: 80 * 800 bytes of FNV-1a per utterance. */
++static void g5_print_row_hashes(const int8_t *in, uint32_t utt, const char *tag)
++{
++  my_printf("# R %lu %s", (unsigned long)utt, tag);
++  for (uint32_t b = 0; b < (uint32_t)CITRINET_FE_NMEL; b++)
++  {
++    my_printf(" ");
++    g5_hex8(g5_fnv1a((const uint8_t *)in + b * (uint32_t)CITRINET_FE_T,
++                     (uint32_t)CITRINET_FE_T));
++  }
++  my_printf("\r\n");
++}
++#endif /* GATE5_WAV || GATE5_MIC */
++
++#ifdef GATE5_WAV
++static void gate5_wav(uint32_t passes, int rowhash)
 +{
 +  const volatile uint32_t *hdr = (const volatile uint32_t *)GATE5_WAV_BASE;
 +  const uint32_t magic = hdr[0], n_utt = hdr[1], n_samp = hdr[2];
@@ -653,24 +705,9 @@ index 8e3d175..4992381 100644
 +              (unsigned long)n_samp, (int)CITRINET_FE_NSAMPLES);
 +    return;
 +  }
-+  if (!g5_probe_ram(GATE5_PCM_RAM) || !g5_probe_ram(GATE5_SCRATCH_RAM))
-+  {
-+    my_printf("# AXISRAM3/4 did not hold a written pattern -- refusing\r\n");
-+    return;
-+  }
++  if (!g5_init_common("gate5 wav")) return;
 +
 +  int16_t *pcm = (int16_t *)GATE5_PCM_RAM;
-+  if (citrinet_fe_init(&g5_fe, (void *)GATE5_SCRATCH_RAM,
-+                       CITRINET_FE_SCRATCH_BYTES) != CITRINET_FE_OK)
-+  {
-+    my_printf("# citrinet_fe_init failed\r\n");
-+    return;
-+  }
-+  if (AiDPULoadModel(&g4_aictx) != DPU_OK)
-+  {
-+    my_printf("# gate5 wav: AiDPULoadModel FAILED\r\n");
-+    return;
-+  }
 +
 +  int8_t *in  = (int8_t *) g4_aictx.p_stai_inputs[0];
 +  int8_t *out = (int8_t *) g4_aictx.p_stai_outputs[0];
@@ -681,7 +718,7 @@ index 8e3d175..4992381 100644
 +  const float q_scale = 1.0f / g4_aictx.input_Q_inv_scale;
 +  const uint32_t pcm_bytes = n_samp * (uint32_t)sizeof(int16_t);
 +
-+  for (uint32_t pass = 0; ; pass++)
++  for (uint32_t pass = 0; passes == 0u || pass < passes; pass++)
 +  {
 +    my_printf("\r\n# ---- wav pass %lu ----\r\n", (unsigned long)pass);
 +
@@ -697,24 +734,36 @@ index 8e3d175..4992381 100644
 +      port_dwt_reset();
 +      uint32_t t0 = (uint32_t)port_dwt_get_cycles();
 +      int rc = citrinet_fe_run(&g5_fe, pcm, n_samp, q_scale, 0, in);
-+      uint32_t fe_cycles = (uint32_t)port_dwt_get_cycles() - t0;
++      uint32_t t1 = (uint32_t)port_dwt_get_cycles();
++      uint32_t fe_cycles = t1 - t0;
 +
 +      /* Hash BEFORE the invoke: the allocator legitimately aliases the input and
 +       * output buffers once the input is dead (board/GATE4.md Round 1), so after
 +       * AiDPUProcess() this buffer may hold logits. */
 +      uint32_t fhash = g5_fnv1a((const uint8_t *)in, in_bytes);
++      /* also BEFORE the invoke, for the same aliasing reason */
++      if (rowhash) g5_print_row_hashes(in, i, "wav");
 +
 +      mcu_cache_clean_invalidate_range((uint32_t)in, (uint32_t)in + in_bytes);
 +
-+      t0 = (uint32_t)port_dwt_get_cycles();
++      /* Reset again. The first waveform run measured fe+npu summing to a
++       * CONSTANT 83.45 M cycles while the split tracked `guard`, which two
++       * fixed-cost stages cannot do -- so one read was not what it looked like.
++       * Reset before each stage and print the raw reads alongside the deltas
++       * rather than infer. */
++      port_dwt_reset();
++      uint32_t n0 = (uint32_t)port_dwt_get_cycles();
 +      AiDPUProcess(&g4_aictx);
-+      uint32_t npu_cycles = (uint32_t)port_dwt_get_cycles() - t0;
++      uint32_t n1 = (uint32_t)port_dwt_get_cycles();
++      uint32_t npu_cycles = n1 - n0;
 +
 +      mcu_cache_invalidate_range((uint32_t)out, (uint32_t)out + out_bytes);
 +
-+      my_printf("# w %lu fe %lu npu %lu rc %d guard %lu hash ",
++      my_printf("# w %lu fe %lu npu %lu raw %lu,%lu,%lu,%lu rc %d guard %lu hash ",
 +                (unsigned long)i, (unsigned long)fe_cycles,
-+                (unsigned long)npu_cycles, rc,
++                (unsigned long)npu_cycles,
++                (unsigned long)t0, (unsigned long)t1,
++                (unsigned long)n0, (unsigned long)n1, rc,
 +                (unsigned long)g5_fe.guard_below);
 +      g5_hex8(fhash);
 +      my_printf(" ids:");
@@ -731,17 +780,263 @@ index 8e3d175..4992381 100644
 +    }
 +
 +    my_printf("# wav done %lu utterances\r\n", (unsigned long)n_utt);
-+    HAL_Delay(5000);
++    if (passes == 0u) HAL_Delay(5000);
 +  }
 +}
 +#endif /* GATE5_WAV */
 +
++#ifdef GATE5_MIC
++/* stm32n6-stt: Gate 5 live capture -- the board's own microphone, end to end.
++ *
++ * GATE5_WAV proved waveform -> features -> NPU on silicon with the waveform
++ * coming out of external flash (board/traces/round21_wav_replay.log: front end
++ * 136 ms, NPU 140 ms).  This path replaces the flash with the DK's on-board
++ * MP23DB01HP PDM microphone through MDF1 -- the one link in the chain nobody
++ * has yet seen a single sample come out of.
++ *
++ * WHAT IS DELIBERATELY NOT REUSED.  ST's acquisition chain (initAudioCapture ->
++ * AudioCapture_ring_buff_alloc -> exec_bm's availableSamples poll) mallocs
++ * nbSamples*2*nbFrames = 513,280 B at COL 800 and would fail at runtime inside
++ * a while(1) (firmware/WORKLIST.md section 5.4).  The utterance-based design
++ * needs none of it: one 8 s buffer, filled once, then processed.  So this keeps
++ * BSP_AUDIO_IN_Record and the two BSP transfer callbacks and drops the ring
++ * buffer entirely -- the callbacks append straight into AXISRAM3.
++ *
++ * GAIN STAGING is the named unsolved risk (docs/FEASIBILITY.md section 2(d):
++ * gaining up AFTER the int16 truncation only recovers to 10.45 % WER, so the
++ * gain has to be applied before it).  There are two knobs and this measures
++ * both, on the same captured audio, every utterance:
++ *
++ *   1. MDF_GAIN, analogue-domain, applied BEFORE the truncation.  Range -16..24
++ *      in ~3 dB steps (stm32n6xx_hal_mdf.h:275-277).  Record_Init() leaves it at
++ *      MDF_GAIN(16000) = 2.  A slow AGC drives it from the previous utterance's
++ *      peak toward -20 dBFS.  HAL_MDF_SetGain() only works while the filter is
++ *      in HAL_MDF_STATE_ACQUISITION (stm32n6xx_hal_mdf.c:1808), so it is called
++ *      after BSP_AUDIO_IN_Record(), not before.
++ *   2. citrinet_fe_peak_normalize(), digital, applied AFTER it.  This is the
++ *      knob FEASIBILITY says is the weak one -- so run it as the CONTROL, not
++ *      as the fix, and print both transcripts.  If "raw" and "norm" agree, the
++ *      analogue gain is already sufficient; if "norm" is much better, knob 1
++ *      has further to go; if "norm" is better than "raw" can ever get, that is
++ *      the truncation loss, measured rather than assumed.
++ *
++ * The instrument that matters is guard occupancy, not the transcript: a level
++ * too low shows up as mel energies below 2^-24 long before it shows up as
++ * wrong words (firmware/WORKLIST.md 5.9).  It is printed every utterance and
++ * citrinet_fe_run() returns CITRINET_FE_E_GUARD (-4) past 50 %.  The NPU runs
++ * anyway -- refusing would hide exactly the degradation we are here to see.
++ */
++#define G5M_TARGET_DBFS_X10   (-200)   /* AGC target peak: -20.0 dBFS          */
++#define G5M_STEP_DB_X10       30       /* one MDF gain step, ~3 dB             */
++#define G5M_GAIN_MIN          (-16)
++#define G5M_GAIN_MAX          24
++#define G5M_MAX_STEP          6        /* per utterance, so a wild reading cannot
++                                        * slam the gain to a rail in one go    */
++#define G5M_SETTLE_MS         400u     /* dropped: MDF high-pass + gain change  */
++
++static volatile uint32_t g5m_w;        /* samples written, 0..CITRINET_FE_NSAMPLES */
++static volatile int      g5m_arm;      /* 1 while the callbacks should append   */
++static char              g5m_text[CITRINET_CTC_TEXT_CAP];
++
++/* Called from the BSP transfer callbacks, i.e. from GPDMA1_Channel0_IRQHandler
++ * by way of BSP_AUDIO_IN_IRQHandler.  160 samples per call, one call every
++ * 10 ms.  Writes are CPU writes to AXISRAM3 and reads are CPU reads, so there
++ * is no coherency problem to solve here. */
++void gate5_mic_feed(const int16_t *src, uint32_t n)
++{
++  if (!g5m_arm) return;
++  uint32_t w = g5m_w;
++  const uint32_t room = (uint32_t)CITRINET_FE_NSAMPLES - w;
++  if (n > room) n = room;
++  memcpy((int16_t *)GATE5_PCM_RAM + w, src, n * sizeof(int16_t));
++  w += n;
++  g5m_w = w;
++  if (w >= (uint32_t)CITRINET_FE_NSAMPLES) g5m_arm = 0;
++}
++
++/* dBFS x10 of a magnitude in int16 counts.  -999 stands for digital silence. */
++static int g5m_dbfs_x10(uint32_t v)
++{
++  if (v == 0u) return -999;
++  return (int)lrintf(200.0f * log10f((float)v / 32768.0f));
++}
++
++static void g5m_print_dbfs(int x10)
++{
++  if (x10 == -999) { my_printf("-inf"); return; }
++  const int a = x10 < 0 ? -x10 : x10;
++  my_printf("%s%d.%d", x10 < 0 ? "-" : "", a / 10, a % 10);
++}
++
++/* Front end + NPU + CTC over whatever is in `pcm`, reported under `tag`. */
++static void g5m_infer(uint32_t utt, const char *tag, const int16_t *pcm, int rowhash)
++{
++  int8_t *in  = (int8_t *) g4_aictx.p_stai_inputs[0];
++  int8_t *out = (int8_t *) g4_aictx.p_stai_outputs[0];
++  const uint32_t in_bytes  = (uint32_t)STAI_NETWORK_IN_1_SIZE_BYTES;
++  const uint32_t out_bytes = (uint32_t)STAI_NETWORK_OUT_1_SIZE_BYTES;
++  const uint32_t n_frames  = out_bytes / (uint32_t)CANNED_NVOCAB;
++  const float    q_scale   = 1.0f / g4_aictx.input_Q_inv_scale;
++
++  port_dwt_reset();
++  const uint32_t t0 = (uint32_t)port_dwt_get_cycles();
++  const int rc = citrinet_fe_run(&g5_fe, pcm, (uint32_t)CITRINET_FE_NSAMPLES,
++                                 q_scale, 0, in);
++  const uint32_t t1 = (uint32_t)port_dwt_get_cycles();
++
++  /* before the invoke: input and output buffers may alias (GATE4.md Round 1) */
++  const uint32_t fhash = g5_fnv1a((const uint8_t *)in, in_bytes);
++  if (rowhash) g5_print_row_hashes(in, utt, tag);
++
++  mcu_cache_clean_invalidate_range((uint32_t)in, (uint32_t)in + in_bytes);
++
++  port_dwt_reset();                    /* AiDPUProcess() resets it internally */
++  const uint32_t n0 = (uint32_t)port_dwt_get_cycles();
++  AiDPUProcess(&g4_aictx);
++  const uint32_t n1 = (uint32_t)port_dwt_get_cycles();
++
++  mcu_cache_invalidate_range((uint32_t)out, (uint32_t)out + out_bytes);
++
++  const uint32_t guard_tot = (uint32_t)CITRINET_FE_NMEL * (uint32_t)CITRINET_FE_T;
++  my_printf("# m %lu %s fe %lu npu %lu rc %d guard %lu/%lu (%lu%%) hash ",
++            (unsigned long)utt, tag, (unsigned long)(t1 - t0),
++            (unsigned long)(n1 - n0), rc,
++            (unsigned long)g5_fe.guard_below, (unsigned long)guard_tot,
++            (unsigned long)((g5_fe.guard_below * 100u) / guard_tot));
++  g5_hex8(fhash);
++  my_printf(" ids:");
++  for (uint32_t f = 0; f < n_frames; f++)
++  {
++    const int8_t *row = out + f * (uint32_t)CANNED_NVOCAB;
++    int8_t   best_v = row[0];
++    uint32_t best_i = 0;
++    for (uint32_t v = 1; v < (uint32_t)CANNED_NVOCAB; v++)
++      if (row[v] > best_v) { best_v = row[v]; best_i = v; }
++    my_printf(" %lu", (unsigned long)best_i);
++  }
++  my_printf("\r\n");
++
++  uint32_t nw = 0;
++  const citrinet_ctc_status_t st =
++      citrinet_ctc_decode(out, n_frames, g5m_text, sizeof(g5m_text), &nw, NULL);
++  my_printf("# T %lu %s ctc %d chars %lu \"%s\"\r\n",
++            (unsigned long)utt, tag, (int)st, (unsigned long)nw, g5m_text);
++}
++
++static void gate5_mic(void)
++{
++  int gain = 2;      /* what MX_MDF1_Init() leaves in DFLTCICR: MDF_GAIN(16000) */
++
++  my_printf("\r\n# gate5 mic: on-board MP23DB01HP -> MDF1 filter0, 16 kHz mono int16\r\n");
++  my_printf("# fe backend=%d tables_fnv1a=%08lx window %d samples (%d s)\r\n",
++            citrinet_fe_backend(), (unsigned long)citrinet_fe_tables_fnv1a(),
++            (int)CITRINET_FE_NSAMPLES,
++            (int)(CITRINET_FE_NSAMPLES / CITRINET_FE_SR));
++
++  if (!g5_init_common("gate5 mic")) return;
++
++  BSP_LED_Init(LED_GREEN);
++  BSP_LED_Off(LED_GREEN);
++  Record_Init();
++
++  int16_t *const pcm = (int16_t *)GATE5_PCM_RAM;
++
++  for (uint32_t utt = 0; ; utt++)
++  {
++    my_printf("\r\n# ---- utterance %lu, MDF gain %d ----\r\n",
++              (unsigned long)utt, gain);
++
++    g5m_arm = 0;
++    g5m_w   = 0;
++    if (BSP_ERROR_NONE != BSP_AUDIO_IN_Record(1, (uint8_t *)audio_acq_ctx.acq_buf,
++                                              CAPTURE_BUFFER_SIZE * sizeof(int16_t)))
++    {
++      my_printf("# BSP_AUDIO_IN_Record failed -- stopping\r\n");
++      return;
++    }
++    /* only legal once the filter is in ACQUISITION, hence after Record() */
++    if (HAL_OK != HAL_MDF_SetGain(&haudio_in_mdf, gain))
++      my_printf("# HAL_MDF_SetGain(%d) refused\r\n", gain);
++
++    HAL_Delay(G5M_SETTLE_MS);
++
++    g5m_w   = 0;
++    g5m_arm = 1;
++    BSP_LED_On(LED_GREEN);
++    my_printf("# >>> SPEAK NOW, %d s\r\n", (int)(CITRINET_FE_NSAMPLES / CITRINET_FE_SR));
++    while (g5m_arm) { __NOP(); }
++    BSP_LED_Off(LED_GREEN);
++    BSP_AUDIO_IN_Stop(1);
++    my_printf("# <<< captured %lu samples\r\n", (unsigned long)g5m_w);
++
++    /* ---- level, the number the whole gate turns on --------------------- */
++    uint32_t peak = 0, clip = 0;
++    double   acc  = 0.0;
++    for (uint32_t i = 0; i < (uint32_t)CITRINET_FE_NSAMPLES; i++)
++    {
++      const int32_t  v = (int32_t)pcm[i];
++      const uint32_t a = (uint32_t)(v < 0 ? -v : v);
++      if (a > peak) peak = a;
++      if (a >= 32767u) clip++;
++      acc += (double)v * (double)v;
++    }
++    const uint32_t rms = (uint32_t)sqrt(acc / (double)CITRINET_FE_NSAMPLES);
++    my_printf("# L %lu peak %lu (", (unsigned long)utt, (unsigned long)peak);
++    g5m_print_dbfs(g5m_dbfs_x10(peak));
++    my_printf(" dBFS) rms %lu (", (unsigned long)rms);
++    g5m_print_dbfs(g5m_dbfs_x10(rms));
++    my_printf(" dBFS) clipped %lu gain %d\r\n", (unsigned long)clip, gain);
++
++    /* ---- knob 2 as the control, knob 1 as the fix ---------------------- */
++    g5m_infer(utt, "raw", pcm, 1);
++
++    const float dg = citrinet_fe_peak_normalize(pcm, (uint32_t)CITRINET_FE_NSAMPLES,
++                                                0.5f, 64.0f);
++    my_printf("# N %lu digital gain x%d/100\r\n",
++              (unsigned long)utt, (int)lrintf(dg * 100.0f));
++    g5m_infer(utt, "norm", pcm, 0);
++
++    /* ---- AGC for the next utterance ------------------------------------ */
++    if (peak > 0u)
++    {
++      const int err = G5M_TARGET_DBFS_X10 - g5m_dbfs_x10(peak);
++      int steps = (err + (err >= 0 ? G5M_STEP_DB_X10 / 2 : -G5M_STEP_DB_X10 / 2))
++                  / G5M_STEP_DB_X10;
++      if (steps >  G5M_MAX_STEP) steps =  G5M_MAX_STEP;
++      if (steps < -G5M_MAX_STEP) steps = -G5M_MAX_STEP;
++      int ng = gain + steps;
++      if (ng < G5M_GAIN_MIN) ng = G5M_GAIN_MIN;
++      if (ng > G5M_GAIN_MAX) ng = G5M_GAIN_MAX;
++      if (ng != gain)
++      {
++        my_printf("# G %lu gain %d -> %d\r\n", (unsigned long)utt, gain, ng);
++        gain = ng;
++      }
++    }
++
++    HAL_Delay(2000);
++  }
++}
++#endif /* GATE5_MIC */
++
  void exec_bm(void)
  {
    bool cont = true;
-+#if defined(GATE5_WAV)
++#if defined(GATE5_MIC)
 +  (void)cont;
-+  gate5_wav();
++  /* One replay pass first, with per-mel-row hashes: it re-establishes that this
++   * image's front end still matches the host bit for bit (and localises the four
++   * utterances that did not, board/traces/round21_wav_replay.log) before any
++   * conclusion is drawn from live audio. Skipped gracefully if no waveform blob
++   * has been flashed to 0x72000000. */
++#if defined(GATE5_WAV)
++  gate5_wav(1u, 1);
++#endif
++  gate5_mic();
++  while (1) { __NOP(); }
++#elif defined(GATE5_WAV)
++  (void)cont;
++  gate5_wav(0u, 0);
 +  while (1) { __NOP(); }
 +#elif defined(GATE4_CORPUS)
 +  (void)cont;
@@ -755,7 +1050,7 @@ index 8e3d175..4992381 100644
    time_stats_init();
  
    initAudioProc(&audio_proc_ctx);
-@@ -172,6 +777,7 @@ void exec_bm(void)
+@@ -172,6 +1072,7 @@ void exec_bm(void)
  
    test_dump();
    my_printf("\n\r# End Processing\n\r");
@@ -763,7 +1058,34 @@ index 8e3d175..4992381 100644
  }
  #endif
  /**
-@@ -842,7 +1448,18 @@ static void Ext_Mem_Config(void)
+@@ -554,7 +1455,14 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(uint32_t Instance)
+ {
+   if (Instance == 1U)
+   {
++#ifdef GATE5_MIC
++    /* stm32n6-stt: no ring buffer -- append the second half straight into the
++     * 8 s utterance buffer in AXISRAM3.  See gate5_mic(). */
++    gate5_mic_feed(&audio_acq_ctx.acq_buf[CAPTURE_BUFFER_SIZE / 2],
++                   CAPTURE_BUFFER_SIZE / 2);
++#else
+     AudioCapture_half_buf_cb(&audio_acq_ctx.ring_buff, audio_acq_ctx.acq_buf, 1U);
++#endif
+   }
+ }
+ 
+@@ -567,7 +1475,11 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(uint32_t Instance)
+ {
+   if (Instance == 1U)
+   {
++#ifdef GATE5_MIC
++    gate5_mic_feed(&audio_acq_ctx.acq_buf[0], CAPTURE_BUFFER_SIZE / 2);
++#else
+     AudioCapture_half_buf_cb(&audio_acq_ctx.ring_buff, audio_acq_ctx.acq_buf, 0U);
++#endif
+   }
+ }
+ #if (CTRL_X_CUBE_AI_AUDIO_OUT==COM_TYPE_HEADSET)
+@@ -842,7 +1754,18 @@ static void Ext_Mem_Config(void)
      __BKPT(0);
    }
    BSP_XSPI_NOR_EnableMemoryMappedMode(0);

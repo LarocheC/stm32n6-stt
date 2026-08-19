@@ -189,6 +189,23 @@ make bm -j8 \
   EXTRA_CFLAGS="-DGATE4_CANNED -I$(cd ../../../.. && pwd)/firmware/inc"
 ```
 
+The Gate 5 builds additionally compile two sources out of this repository, which
+is what `EXTRA_SOURCES` is for (a bare `-I` is not enough — see the Makefile hunk
+in §2). The live-microphone image, which is the superset:
+
+```bash
+R=$(cd ../../../.. && pwd)
+make bm -j8 \
+  GCC_PATH=/home/claroche/opt/st/stm32cubeclt_1.21.0/GNU-tools-for-STM32/bin \
+  EXTRA_SOURCES="$R/firmware/src/citrinet_fe.c $R/firmware/src/citrinet_ctc.c" \
+  EXTRA_CFLAGS="-DGATE4_CANNED -DGATE5_WAV -DGATE5_MIC -DCITRINET_FE_USE_CMSIS=1 -I$R/firmware/inc"
+```
+
+`GATE4_CANNED` stays on in every Gate 5 build. It is what replaces
+`AudioBM_proc_t audio_proc_ctx` with a bare `AIProcCtx_t`, and without it the
+image carries ST's two `pCplxSpectrum[(NFFT/2+1)*2*COL]` arrays at 822,400 B
+each and does not link at COL 800 (`firmware/AUDIO-INPUT.md` §7 correction 5).
+
 This is the command `apply_vendor_mods.sh:103-105` prints on completion.
 Output: `BuildGCC/BM/GS_Audio_N6.{elf,bin}` (`bm.mk:32`, `bm.mk:26-27`).
 
@@ -216,6 +233,9 @@ to add defines. Use it.
 | `-DGATE4_EPOCH_FROM=<n>` | window the trace: silent below epoch *n*, every epoch at or above it. Default 280 (`audio_bm.c:188-190`) | — |
 | `-DGATE4_RISAF` | calls `RISAF_Config()`, which ST define and never call so `--gc-sections` drops it. Opens the RISAF firewall for SRAM1/2, the NPU master ports, SRAM3-6, FLEXMEM and OCTOSPI2 (`audio_bm.c:287-302`) | Round 8 tested it: **no change**. Not needed |
 | `-DGATE4_XSPI_PREFETCH` | leaves XSPI2 automatic prefetch enabled instead of applying ST's undocumented "Hotfix for xspi: no prefetch" (`audio_bm.c:1164-1175`) | Round 13 proposed it against a throughput problem Round 14 showed did not exist. Not needed |
+| `-DGATE4_CORPUS` | `gate4_corpus()` — the 64-utterance **feature** corpus at `0x71000000`, host-computed features straight to the NPU. This is what Round 20 scored | needs the corpus blob flashed |
+| `-DGATE5_WAV` | `gate5_wav()` — the 16-utterance **waveform** blob at `0x72000000` through `citrinet_fe.c` on the M55 and then the NPU. PCM buffer in AXISRAM3 (`0x34200000`), front-end scratch in AXISRAM4 (`0x34270000`), neither of which the mpool or the linker script claims. Needs `EXTRA_SOURCES` | 256,000 B in each of two otherwise-unused banks; needs the waveform blob flashed |
+| `-DGATE5_MIC` | `gate5_mic()` — the on-board **microphone**, MDF1 filter 0, 8 s per utterance, straight into the same AXISRAM3 buffer. Prints level (peak/RMS in dBFS, clipped-sample count), guard occupancy, the feature hash and 80 per-mel-row hashes, the argmax ids and the decoded text, twice per utterance: once on the captured audio and once after `citrinet_fe_peak_normalize()`. Then moves `MDF_GAIN` toward a −20 dBFS peak. If `GATE5_WAV` is also defined it runs **one** replay pass with row hashes first, as a parity check on the same image | the green LED is on while recording |
 | `-DUSE_EXT_SRAM` | initialises the APS256 PSRAM and memory-maps `0x90000000` | **Only needed by the Round 11 `Slice` workaround**, which spilled 800 kB there. The Round 12 fold uses no PSRAM (`GATE4.md:963-975`), so leave it off. Without it, any access to `0x90000000` raises an imprecise bus error that escalates to HardFault (`GATE4.md:900-907`) |
 
 A normal Gate 4 run is `-DGATE4_CANNED` alone. Add `-DGATE4_BEACON

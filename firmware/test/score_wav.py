@@ -411,12 +411,14 @@ _ORT = {}
 
 def _ort_ids(q_int8, scale, model_rel):
     """Host argmax ids for a tensor the feature blob does not contain.  Same
-    session settings as gen_corpus.py: ORT_ENABLE_BASIC, CPU, dequantised int8
-    fed in, so host and device see the same values."""
+    session settings as gen_corpus.py and gen_wav_corpus.py: ORT_ENABLE_ALL --
+    onnxruntime's actual default -- CPU, dequantised int8 fed in, so host and
+    device see the same values.  The level matters: gen_wav_corpus.py measured
+    ALL 16/16 and EXTENDED 16/16 against corpus_ref.json, but BASIC only 7/16."""
     import onnxruntime as ort
     if "sess" not in _ORT:
         so = ort.SessionOptions()
-        so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
+        so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         _ORT["sess"] = ort.InferenceSession(os.path.join(REPO, model_rel), so,
                                             providers=["CPUExecutionProvider"])
         _ORT["in"] = _ORT["sess"].get_inputs()[0].name

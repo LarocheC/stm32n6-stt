@@ -154,7 +154,8 @@ def load_sidecar(path):
     carries the host's runner-up token per frame.
 
     Returns a dict with: blank, N, n_out_frames, model, blob (path/digest),
-    utts[{i,k,d,nw,ref,host_ids,host_margin,host_top2|None,host_text,truncated}].
+    utts[{i,k,d,nw,ref,host_ids,host_margin|None,host_top2|None,host_text,
+    truncated}].  host_margin is None for sidecars that do not carry one.
     """
     raw = json.load(open(path))
     out = dict(path=path)
@@ -164,7 +165,7 @@ def load_sidecar(path):
                    blob_path=raw.get("blob"),
                    digest=("sha256", raw.get("blob_sha256")))
         out["utts"] = [dict(i=u["i"], k=u["k"], d=u["d"], nw=u["nw"], ref=u["ref"],
-                            host_ids=u["host_ids"], host_margin=u["host_margin"],
+                            host_ids=u["host_ids"], host_margin=u.get("host_margin"),
                             host_top2=u.get("host_top2"), host_text=u["host_text"],
                             truncated=bool(u.get("truncated", False)))
                        for u in raw["utts"]]
@@ -176,7 +177,7 @@ def load_sidecar(path):
                    model=raw["model"], blob_path=b.get("path"), digest=digest)
         out["utts"] = [dict(i=u["index"], k=u["key"], d=u["duration_s"],
                             nw=u["n_words_ref"], ref=u["ref"],
-                            host_ids=u["host_ids"], host_margin=u["host_margin"],
+                            host_ids=u["host_ids"], host_margin=u.get("host_margin"),
                             host_top2=u.get("host_top2"), host_text=u["host_text"],
                             truncated=bool(u.get("truncated", False)))
                        for u in raw["utterances"]]
@@ -185,10 +186,17 @@ def load_sidecar(path):
                          f"(keys {sorted(raw)[:12]})")
     n = out["n_out_frames"]
     for u in out["utts"]:
-        if len(u["host_ids"]) != n or len(u["host_margin"]) != n:
+        # host_margin is optional.  artifacts/corpus/wav_ref.json -- the Gate 5
+        # waveform sidecar -- carries host_ids and host_text but no per-frame
+        # runner-up margin, and score_wav.py, which reuses this loader, never
+        # reads one.  Requiring it here made every waveform run die with
+        # KeyError: 'host_margin' before a single line of the log was parsed.
+        if len(u["host_ids"]) != n:
             raise SystemExit(f"{path}: utterance {u['i']} has "
-                             f"{len(u['host_ids'])} ids / {len(u['host_margin'])} margins, "
-                             f"expected {n}")
+                             f"{len(u['host_ids'])} ids, expected {n}")
+        if u["host_margin"] is not None and len(u["host_margin"]) != n:
+            raise SystemExit(f"{path}: utterance {u['i']} has "
+                             f"{len(u['host_margin'])} margins, expected {n}")
     if len(out["utts"]) != out["N"]:
         raise SystemExit(f"{path}: N={out['N']} but {len(out['utts'])} utterances")
     out["raw"] = raw
