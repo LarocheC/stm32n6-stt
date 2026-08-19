@@ -523,3 +523,114 @@ Localise the four. `firmware/test/score_wav.py` already implements the host side
 of a per-mel-row FNV-1a (80 rows of 800 bytes); a rebuild that prints 80 row
 hashes turns "4 utterances differ" into "these mel bins, these frames" without
 further host work.
+
+---
+
+## 10. First light on the microphone — 2026-08-19
+
+`board/traces/round22_mic_firstlight.log`. `-DGATE5_MIC`, on-board MP23DB01HP
+through MDF1 filter 0, 16 kHz mono, 8 s per utterance straight into AXISRAM3.
+One speaker, one sentence — *"the birch canoe slid on the smooth planks"* —
+eleven times, then fifteen utterances of an empty room.
+
+**It transcribes.** Best two utterances, both raw, one word error each:
+
+```
+u7  "the birch cano slid on the smooth planks"      12.5 %
+u9  "the birch canoe slid on the smooth blanks"     12.5 %
+```
+
+Over the eleven spoken utterances: **29.5 % WER raw, 34.1 % after
+`citrinet_fe_peak_normalize()`** (26 and 30 errors over 88 reference words).
+
+### The −54 dBFS assumption is wrong by about 50 dB
+
+`docs/FEASIBILITY.md` §2(d) assumed the DK's microphone delivers −54 dBFS and
+built a 35 % WER prediction on it; `firmware/AUDIO-INPUT.md` §5 called that the
+silent failure mode of the on-board-mic option, and `WORKLIST.md` §5.8 planned
+two knobs to fix it. At the stock `MDF_GAIN(16000) = 2` this board delivered a
+**−3.8 dBFS peak, −23.5 dBFS RMS, 0 clipped samples**. There was no gain deficit
+to correct.
+
+### But the loudest capture was not the best one
+
+Sorted by guard occupancy rather than by level, over the eleven spoken
+utterances, raw pass:
+
+| guard occupancy | utterances | mean word errors |
+|---|---|---:|
+| 0–25 % | u0, u1 | 3.5 |
+| 26–50 % | u4, u7, u8, u9, u10 | **1.8** |
+| 51–70 % | u2, u3, u5, u6 | 2.5 |
+
+The evaluation corpus's own median guard occupancy is **35.6 %**
+(`artifacts/corpus/wav_ref.json`, `host_guard_below` median 22,788 of 64,000).
+The two best utterances sat at 34 % and 50 %; the two worst sat at 0 % and 20 %,
+and those were the *loudest*.
+
+The mechanism is distribution match, not headroom. LibriSpeech carries near-silent
+pauses whose mel energies fall below the 2⁻²⁴ guard; a hot close-mic capture has
+a noise floor that never does. Per-feature normalisation then computes its mean
+and standard deviation from a different distribution than the one the model was
+trained on. **So the controller should target guard occupancy, not a level** —
+and guard occupancy is something the front end already computes for free.
+
+**This is n = 1 per condition**: one speaker, one sentence, one room, eleven
+utterances. It is a trend with a mechanism behind it, not a calibrated number.
+What it is strong enough to do is redirect the controller, because the previous
+target had no evidence behind it at all.
+
+### What the run validated on the way
+
+- **The guard instrument works on live audio.** `citrinet_fe_run()` returned
+  `CITRINET_FE_E_GUARD` (−4) at 66 %, 57 %, 69 %, 56 %, 50 % and 90 %, and `OK`
+  everywhere below `CITRINET_FE_GUARD_MAX_FRAC`. This is the telemetry
+  `WORKLIST.md` §5.9 required from the first commit, now exercised.
+- **`peak_normalize` behaves exactly as `FEASIBILITY.md` §2(d) predicts.** At u2
+  (peak −25.7 dBFS, guard 66 %) it lifted ×9.65, cut guard to 3 % and halved the
+  errors. It never beat a correctly-gained capture. Digital gain applied *after*
+  the int16 truncation recovers some of the loss, not all of it.
+- **The capture path is sound.** 128,000 samples arrive every time; `# <<<
+  captured 128000 samples` on all 26 utterances, no ring buffer, no `malloc`.
+- **The front end costs the same as in replay**: 83.2–83.9 M cycles, against
+  81.5–81.7 M for the same code fed from flash in round 21. The 2 % is code
+  layout, not the microphone.
+
+### An AGC needs a speech gate
+
+Utterances 11–25 were an empty room. A guard-seeking loop with no speech
+detector winds the gain to a rail chasing a target silence cannot reach. The CTC
+decoder already answers the question: **no tokens decoded, no adaptation.**
+
+
+### Round 21's four disagreeing utterances, localised
+
+The same image printed 80 per-mel-row FNV-1a hashes during its replay pass.
+Against the host oracle (`board/traces/round21_wav_replay.log.host_row_hashes.json`):
+
+| utterance | rows differing of 80 | which |
+|---|---:|---|
+| u7, u8, u10, u12, u14 | 0 | — |
+| u9 `7850-281318-0006` | 2 | mel bins 2, 26 |
+| u13 `84-121123-0006` | 1 | mel bin 0 |
+| u15 `6345-93302-0017` | 2 | mel bins 2, 74 |
+| u11 `1272-141231-0012` | 56 | the truncated utterance, predicted |
+
+**One or two isolated, non-adjacent mel bins.** That eliminates every structural
+candidate named in §9. A differing FFT would move all 80 rows, because every mel
+bin is a dot product over shared FFT bins; so would a differing pre-emphasis or a
+differing input buffer. A differing mel filterbank table would move a *contiguous*
+run of bins, since the filters overlap. What remains is a single int8 value
+crossing a rounding boundary — and bins 0 and 2 are the narrowest filters, with
+the fewest taps and therefore the least averaging, which is where a 1-LSB
+difference is most likely to survive to the output.
+
+u11 is the truncated utterance and was predicted in §9: the device sees 128,000
+samples where the host used 127,841, so pre-emphasis at sample 127,841 sees a
+value the host never did. That it moves 56 rows rather than all 80 is
+per-mel-bin normalisation spreading one frame's difference unevenly.
+
+The next build prints each row's signed sum and sum of absolute values alongside
+its hash. Sum differing by ±1 *and* sumabs by ±1 means exactly one value moved by
+one LSB — which turns the paragraph above from an argument into a measurement.
+Signed sum alone would not do it: two values moving +1 and −1 leave it unchanged.
