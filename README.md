@@ -6,8 +6,8 @@ Neural-ART NPU** → greedy CTC decode → text on the 800×480 LCD.
 
 ![Citrinet-256 running on an STM32N6](docs/images/citrinet-on-n6.png)
 
-<sub>*Artwork, not a photograph — the board drawn here is not an N6570-DK. The
-real thing is below.*</sub>
+<sub>*Artwork, the
+real thing is below ;-).*</sub>
 
 ### → [**QUICKSTART.md**](QUICKSTART.md) — clone, build, flash, talk
 
