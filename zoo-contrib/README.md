@@ -1,5 +1,13 @@
 # `zoo-contrib/` — what this project owes the deployment zoo
 
+> **Applied 2026-10-02** in
+> [stm32n6-deployment-zoo#2](https://github.com/LarocheC/stm32n6-deployment-zoo/pull/2),
+> together with the Gate 4 findings that came after this package was written:
+> the two NPU stalls, OTP, the audio app's traps, and the deployed 448-epoch
+> build as the recipe's gate. The zoo's `KNOWLEDGE.md` is now the entry point
+> for STM32N6 facts. This directory is kept as the record of what was handed
+> over.
+
 `stm32n6-stt` took one model from a Hugging Face id to a signed image running
 on an STM32N6570-DK. Roughly half of what that cost was **not** about Citrinet:
 it was about the compiler, the memory map, ST's Makefile and ST's signing tool,
